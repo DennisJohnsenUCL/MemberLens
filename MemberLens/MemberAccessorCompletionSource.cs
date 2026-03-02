@@ -1,14 +1,16 @@
-﻿using FixtureBuilder;
+﻿using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using FixtureBuilder;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
 using Microsoft.VisualStudio.Text;
-using System.Collections.Immutable;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace MemberLens
 {
@@ -16,6 +18,7 @@ namespace MemberLens
     {
         public async Task<CompletionContext> GetCompletionContextAsync(IAsyncCompletionSession session, CompletionTrigger trigger, SnapshotPoint triggerLocation, SnapshotSpan applicableToSpan, CancellationToken token)
         {
+            Debug.WriteLine("1");
             var snapshot = triggerLocation.Snapshot;
             var doc = snapshot.TextBuffer.GetRelatedDocuments().FirstOrDefault();
             if (doc == null) return CompletionContext.Empty;
@@ -26,82 +29,95 @@ namespace MemberLens
             var root = await syntaxTree.GetRootAsync(token);
 
             if (token.IsCancellationRequested) return CompletionContext.Empty;
-
-            var locationToken = root.FindToken(triggerLocation.Position);
+            Debug.WriteLine("2");
+            var position = triggerLocation.Position;
+            var locationToken = root.FindToken(position);
             var tokenParent = locationToken.Parent;
             if (tokenParent == null) return CompletionContext.Empty;
-
-            var argumentNode = tokenParent.FirstAncestorOrSelf<ArgumentSyntax>();
-            if (argumentNode == null) return CompletionContext.Empty;
-
-            var argumentListSyntax = argumentNode.Parent as ArgumentListSyntax;
+            Debug.WriteLine("2.1");
+            var argumentListSyntax = tokenParent.FirstAncestorOrSelf<ArgumentListSyntax>();
             if (argumentListSyntax == null) return CompletionContext.Empty;
-
+            Debug.WriteLine("2.2");
             var expressionSyntax = argumentListSyntax.Parent;
             if (expressionSyntax == null) return CompletionContext.Empty;
-
+            Debug.WriteLine("2.3");
+            int argumentSymbolIndex = argumentListSyntax.Arguments.TakeWhile(arg => arg.FullSpan.End <= position).Count();
+            Debug.WriteLine("3");
             var semanticModel = await doc.GetSemanticModelAsync(token);
             if (semanticModel == null) return CompletionContext.Empty;
-
+            Debug.WriteLine("3.1");
             if (token.IsCancellationRequested) return CompletionContext.Empty;
-
+            Debug.WriteLine("3.2"); // <-- Last printed line
             var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
             var methodSymbol = methodSymbolInfo.Symbol as IMethodSymbol;
-            if (methodSymbol == null) return CompletionContext.Empty;
-
+            if (methodSymbol == null)
+            {
+                var candidateSymbols = methodSymbolInfo.CandidateSymbols;
+                if (candidateSymbols.Length == 0) return CompletionContext.Empty;
+                //TODO: Iterate through and try to find one with MemberAccessor
+                else
+                {
+                    methodSymbol = candidateSymbols[0] as IMethodSymbol;
+                    if (methodSymbol == null) return CompletionContext.Empty;
+                }
+            }
+            Debug.WriteLine("3.3");
             var methodParameterSymbols = methodSymbol.Parameters;
-
-            var argumentSymbolIndex = argumentListSyntax.Arguments.IndexOf(argumentNode);
+            Debug.WriteLine("4");
             if (argumentSymbolIndex == -1) return CompletionContext.Empty;
             if (argumentSymbolIndex >= methodParameterSymbols.Length) return CompletionContext.Empty;
-
+            Debug.WriteLine("4.1");
             var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
             var attributes = parameterSymbol.GetAttributes();
-
+            Debug.WriteLine(parameterSymbol.Name);
+            Debug.WriteLine(attributes.Length);
+            foreach (var item in attributes)
+            {
+                Debug.WriteLine("Attribute class name " + item.AttributeClass?.Name);
+            }
+            Debug.WriteLine(nameof(MemberAccessorAttribute));
             var memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
 
             if (memberAccessorAttribute == null) return CompletionContext.Empty;
-
-            //TODO: NamedArguments vs ConstructorArguments
-            var attributeProperties = memberAccessorAttribute.NamedArguments;
-
-            var accessorTypesConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.AccessorTypes)).Value;
-            if (accessorTypesConstant.Kind == TypedConstantKind.Error) return CompletionContext.Empty;
-            var accessorTypes = (AccessorTypes)(int)accessorTypesConstant.Value;
-
-            var typeConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.Type)).Value;
-            if (typeConstant.Kind == TypedConstantKind.Error) return CompletionContext.Empty;
-            var type = (INamedTypeSymbol)typeConstant.Value;
+            Debug.WriteLine("5");
+            var constructorArgs = memberAccessorAttribute.ConstructorArguments;
+            if (constructorArgs.Length < 2) return CompletionContext.Empty;
+            Debug.WriteLine("5.1");
+            var accessorTypes = (AccessorTypes)(int)constructorArgs[0].Value;
 
             INamedTypeSymbol sourceType = null;
 
-            if (type != null) sourceType = type;
-            else
+            if (constructorArgs[1].Kind == TypedConstantKind.Type)
             {
-                var genericSourcesConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.GenericSources)).Value;
-                if (genericSourcesConstant.Kind == TypedConstantKind.Error) return CompletionContext.Empty;
-                var genericSources = (GenericSources)(int)genericSourcesConstant.Value;
-
-                var genericIndexConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.GenericIndex)).Value;
-                if (genericIndexConstant.Kind == TypedConstantKind.Error) return CompletionContext.Empty;
-                var genericIndex = (int)genericIndexConstant.Value;
+                sourceType = (INamedTypeSymbol)constructorArgs[1].Value;
+            }
+            else if (constructorArgs.Length >= 3)
+            {
+                var genericSources = (GenericSources)(int)constructorArgs[1].Value;
+                var genericIndex = (int)constructorArgs[2].Value;
 
                 if (genericSources == GenericSources.Method)
                 {
                     if (genericIndex >= methodSymbol.TypeArguments.Length) return CompletionContext.Empty;
+                    Debug.WriteLine("5.2");
                     sourceType = (INamedTypeSymbol)methodSymbol.TypeArguments[genericIndex];
                 }
                 else if (genericSources == GenericSources.Class)
                 {
                     var sourceClass = methodSymbol.ContainingType;
                     if (genericIndex >= sourceClass.TypeArguments.Length) return CompletionContext.Empty;
+                    Debug.WriteLine("5.3");
                     sourceType = (INamedTypeSymbol)sourceClass.TypeArguments[genericIndex];
                 }
                 else return CompletionContext.Empty;
+                Debug.WriteLine("5.4");
             }
+            else return CompletionContext.Empty;
+            Debug.WriteLine("5.5");
 
             if (sourceType == null) return CompletionContext.Empty;
 
+            Debug.WriteLine("7");
             ImmutableArray<ISymbol> sourceMembers;
 
             if (accessorTypes == AccessorTypes.Field)
@@ -119,8 +135,11 @@ namespace MemberLens
             //TODO: Filter away BCL and others
             //TODO: Filter by current SnapshotSpan
 
+            //TODO: Filter .ctor methods
+
+            Debug.WriteLine("8");
             //TODO: Better CompletionItem overloads?
-            var completionItems = sourceMembers.Select(x => new CompletionItem(x.Name, this)).ToImmutableArray();
+            var completionItems = sourceMembers.Select(x => new CompletionItem($"\"{x.Name}\"", this)).ToImmutableArray();
             //TODO: Better CompletionContext overloads?
             var completionContext = new CompletionContext(completionItems);
             return completionContext;
