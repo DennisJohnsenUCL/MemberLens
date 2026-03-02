@@ -7,8 +7,7 @@ namespace MemberLens
 {
     [Export(typeof(IAsyncCompletionSourceProvider))]
     [ContentType("csharp")]
-    //TODO: Name?
-    [Name("")]
+    [Name("MemberAccessorCompletionSourceProvider")]
     [TextViewRole(PredefinedTextViewRoles.Document)]
     internal class MemberAccessorCompletionSourceProvider : IAsyncCompletionSourceProvider
     {
