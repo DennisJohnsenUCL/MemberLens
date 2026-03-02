@@ -5,7 +5,6 @@ using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
 using Microsoft.VisualStudio.Text;
-using System;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
@@ -63,6 +62,7 @@ namespace MemberLens
 
             if (memberAccessorAttribute == null) return CompletionContext.Empty;
 
+            //TODO: NamedArguments vs ConstructorArguments
             var attributeProperties = memberAccessorAttribute.NamedArguments;
 
             var accessorTypesConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.AccessorTypes)).Value;
@@ -116,7 +116,8 @@ namespace MemberLens
 
             //TODO: Handle out-of-solution types
 
-            //TODO: Filter members
+            //TODO: Filter away BCL and others
+            //TODO: Filter by current SnapshotSpan
 
             //TODO: Better CompletionItem overloads?
             var completionItems = sourceMembers.Select(x => new CompletionItem(x.Name, this)).ToImmutableArray();
@@ -133,8 +134,50 @@ namespace MemberLens
 
         public CompletionStartData InitializeCompletion(CompletionTrigger trigger, SnapshotPoint triggerLocation, CancellationToken token)
         {
-            //TODO: Implement
-            throw new NotImplementedException();
+            //TODO: Handle " being typed
+
+            var snapshot = triggerLocation.Snapshot;
+            var doc = snapshot.TextBuffer.GetRelatedDocuments().FirstOrDefault();
+            if (doc == null) return CompletionStartData.DoesNotParticipateInCompletion;
+
+            var position = triggerLocation.Position;
+
+            //TODO: Handle invalid initial position, or start of argument before typing
+            var initial = snapshot[position];
+
+            if (position != 0 && (snapshot[position - 1] == '(' || snapshot[position - 1] == ',') || position > 1 && snapshot[position - 1] == ' ' && snapshot[position - 2] == ',')
+                return new CompletionStartData(CompletionParticipation.ProvidesItems, new SnapshotSpan(snapshot, position, 0));
+
+            if (!char.IsLetterOrDigit(initial) && initial != '_')
+                return CompletionStartData.DoesNotParticipateInCompletion;
+
+            var start = position;
+            while (true)
+            {
+                if (start == 0) break;
+                var c = snapshot[start - 1];
+                if (!char.IsLetterOrDigit(c) && c != '_') break;
+                else
+                {
+                    start--;
+                }
+            }
+
+            var end = position + 1;
+            while (true)
+            {
+                if (end == snapshot.Length - 1) break;
+                var c = snapshot[end];
+                if (!char.IsLetterOrDigit(c) && c != '_') break;
+                else
+                {
+                    end++;
+                }
+            }
+
+            var snapshotSpan = new SnapshotSpan(snapshot, start, end - start);
+
+            return new CompletionStartData(CompletionParticipation.ProvidesItems, snapshotSpan);
         }
     }
 }
