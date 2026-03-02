@@ -1,14 +1,15 @@
-﻿using System;
-using System.Collections.Immutable;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+﻿using FixtureBuilder;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
 using Microsoft.VisualStudio.Text;
+using System;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace MemberLens
 {
@@ -17,55 +18,98 @@ namespace MemberLens
         public async Task<CompletionContext> GetCompletionContextAsync(IAsyncCompletionSession session, CompletionTrigger trigger, SnapshotPoint triggerLocation, SnapshotSpan applicableToSpan, CancellationToken token)
         {
             var snapshot = triggerLocation.Snapshot;
-            var doc = snapshot.TextBuffer.GetRelatedDocuments().First();
+            var doc = snapshot.TextBuffer.GetRelatedDocuments().FirstOrDefault();
+            if (doc == null) return CompletionContext.Empty;
+
             var syntaxTree = await doc.GetSyntaxTreeAsync(token);
+            if (syntaxTree == null) return CompletionContext.Empty;
+
             var semanticModel = await doc.GetSemanticModelAsync(token);
+            if (semanticModel == null) return CompletionContext.Empty;
 
             var root = await syntaxTree.GetRootAsync(token);
             var locationToken = root.FindToken(triggerLocation.Position);
-            var parent = locationToken.Parent;
-            var argumentNode = parent.FirstAncestorOrSelf<ArgumentSyntax>();
-            var argumentListSyntax = (ArgumentListSyntax)argumentNode.Parent;
+            var tokenParent = locationToken.Parent;
+            if (tokenParent == null) return CompletionContext.Empty;
+
+            var argumentNode = tokenParent.FirstAncestorOrSelf<ArgumentSyntax>();
+            if (argumentNode == null) return CompletionContext.Empty;
+
+            var argumentListSyntax = argumentNode.Parent as ArgumentListSyntax;
+            if (argumentListSyntax == null) return CompletionContext.Empty;
+
             var expressionSyntax = argumentListSyntax.Parent;
+            if (expressionSyntax == null) return CompletionContext.Empty;
 
             var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
-            var methodSymbol = (IMethodSymbol)methodSymbolInfo.Symbol;
+            var methodSymbol = methodSymbolInfo.Symbol as IMethodSymbol;
+            if (methodSymbol == null) return CompletionContext.Empty;
+
             var methodParameterSymbols = methodSymbol.Parameters;
 
             var argumentSymbolIndex = argumentListSyntax.Arguments.IndexOf(argumentNode);
+            if (argumentSymbolIndex == -1) return CompletionContext.Empty;
+            if (argumentSymbolIndex >= methodParameterSymbols.Length) return CompletionContext.Empty;
+
             var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
             var attributes = parameterSymbol.GetAttributes();
 
-            //Use the semantic model to get the attribute metadata instead of string comparison
-            var memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass.Name == "MemberAccessor");
+            var memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
 
-            if (memberAccessorAttribute == null)
-                return CompletionContext.Empty;
+            if (memberAccessorAttribute == null) return CompletionContext.Empty;
 
             var attributeProperties = memberAccessorAttribute.NamedArguments;
 
-            //Use the metadata to get the property names and types for casting
+            var accessorTypesConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.AccessorTypes)).Value;
+            if (accessorTypesConstant.Kind == TypedConstantKind.Error) return CompletionContext.Empty;
+            var accessorTypes = (AccessorTypes)(int)accessorTypesConstant.Value;
 
-            //Cast to int, then to enum
-            var typeOfAccessor = attributeProperties.FirstOrDefault(kvp => kvp.Key == "").Value.Value;
-            var typeProperty = (INamedTypeSymbol)attributeProperties.FirstOrDefault(kvp => kvp.Key == "").Value.Value;
+            var typeConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.Type)).Value;
+            if (typeConstant.Kind == TypedConstantKind.Error) return CompletionContext.Empty;
+            var type = (INamedTypeSymbol)typeConstant.Value;
 
             INamedTypeSymbol sourceType = null;
 
-            if (typeProperty != null) sourceType = typeProperty;
+            if (type != null) sourceType = type;
             else
             {
-                //Cast to int, then to enum
-                var typeOfGeneric = attributeProperties.FirstOrDefault(kvp => kvp.Key == "").Value.Value;
-                var indexofGeneric = (int)attributeProperties.FirstOrDefault(kvp => kvp.Key == "").Value.Value;
+                var genericSourcesConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.GenericSources)).Value;
+                if (genericSourcesConstant.Kind == TypedConstantKind.Error) return CompletionContext.Empty;
+                var genericSources = (GenericSources)(int)genericSourcesConstant.Value;
 
-                //If typeofGeneric == method
-                //If typeofGeneric == class
-                //Assign sourceType
+                var genericIndexConstant = attributeProperties.FirstOrDefault(kvp => kvp.Key == nameof(MemberAccessorAttribute.GenericIndex)).Value;
+                if (genericIndexConstant.Kind == TypedConstantKind.Error) return CompletionContext.Empty;
+                var genericIndex = (int)genericIndexConstant.Value;
+
+                if (genericSources == GenericSources.Method)
+                {
+                    if (genericIndex >= methodSymbol.TypeArguments.Length) return CompletionContext.Empty;
+                    sourceType = (INamedTypeSymbol)methodSymbol.TypeArguments[genericIndex];
+                }
+                else if (genericSources == GenericSources.Class)
+                {
+                    var sourceClass = methodSymbol.ContainingType;
+                    if (genericIndex >= sourceClass.TypeArguments.Length) return CompletionContext.Empty;
+                    sourceType = (INamedTypeSymbol)sourceClass.TypeArguments[genericIndex];
+                }
+                else return CompletionContext.Empty;
             }
 
-            //Get member symbol type from typeOfAccessor
-            var sourceMembers = sourceType.GetMembers(); //OfType<>
+            if (sourceType == null) return CompletionContext.Empty;
+
+            ImmutableArray<ISymbol> sourceMembers;
+
+            if (accessorTypes == AccessorTypes.Field)
+            {
+                sourceMembers = sourceType.GetMembers().OfType<IFieldSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
+            }
+            else if (accessorTypes == AccessorTypes.Method)
+            {
+                sourceMembers = sourceType.GetMembers().OfType<IMethodSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
+            }
+            else return CompletionContext.Empty;
+
+            //TODO: Filter members
 
             //Better CompletionItem overloads?
             var completionItems = sourceMembers.Select(x => new CompletionItem(x.Name, this)).ToImmutableArray();
