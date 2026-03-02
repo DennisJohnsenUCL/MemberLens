@@ -65,9 +65,13 @@ namespace MemberLens
             var methodParameterSymbols = methodSymbol.Parameters;
             Debug.WriteLine("4");
             if (argumentSymbolIndex == -1) return CompletionContext.Empty;
+            //TODO: Bailing out here when on param1 somehow? Is count off?
+            Debug.WriteLine("argumentSymbolIndex " + argumentSymbolIndex);
+            Debug.WriteLine("methodParameterSymbols.Length " + methodParameterSymbols.Length);
             if (argumentSymbolIndex >= methodParameterSymbols.Length) return CompletionContext.Empty;
             Debug.WriteLine("4.1");
             var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
+            if (parameterSymbol.Type.Name != "String") return CompletionContext.Empty;
             var attributes = parameterSymbol.GetAttributes();
             Debug.WriteLine(parameterSymbol.Name);
             Debug.WriteLine(attributes.Length);
@@ -153,8 +157,6 @@ namespace MemberLens
 
         public CompletionStartData InitializeCompletion(CompletionTrigger trigger, SnapshotPoint triggerLocation, CancellationToken token)
         {
-            //TODO: Handle " being typed
-
             var snapshot = triggerLocation.Snapshot;
             var doc = snapshot.TextBuffer.GetRelatedDocuments().FirstOrDefault();
             if (doc == null) return CompletionStartData.DoesNotParticipateInCompletion;
@@ -162,6 +164,8 @@ namespace MemberLens
             var position = triggerLocation.Position;
 
             //TODO: Handle invalid initial position, or start of argument before typing
+            //TODO: Handle "
+            //TODO: Exit early if not in method invocation (check for ( to left)
             var initial = snapshot[position];
 
             if (position != 0 && (snapshot[position - 1] == '(' || snapshot[position - 1] == ',') || position > 1 && snapshot[position - 1] == ' ' && snapshot[position - 2] == ',')
