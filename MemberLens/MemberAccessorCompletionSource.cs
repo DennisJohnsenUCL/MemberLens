@@ -41,13 +41,13 @@ namespace MemberLens
             var expressionSyntax = argumentListSyntax.Parent;
             if (expressionSyntax == null) return CompletionContext.Empty;
             Debug.WriteLine("2.3");
-            int argumentSymbolIndex = argumentListSyntax.Arguments.TakeWhile(arg => arg.FullSpan.End <= position).Count();
+            int argumentSymbolIndex = argumentListSyntax.Arguments.GetSeparators().Count(separator => separator.SpanStart < position);
             Debug.WriteLine("3");
             var semanticModel = await doc.GetSemanticModelAsync(token);
             if (semanticModel == null) return CompletionContext.Empty;
             Debug.WriteLine("3.1");
             if (token.IsCancellationRequested) return CompletionContext.Empty;
-            Debug.WriteLine("3.2"); // <-- Last printed line
+            Debug.WriteLine("3.2");
             var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
             var methodSymbol = methodSymbolInfo.Symbol as IMethodSymbol;
             if (methodSymbol == null)
@@ -64,14 +64,14 @@ namespace MemberLens
             Debug.WriteLine("3.3");
             var methodParameterSymbols = methodSymbol.Parameters;
             Debug.WriteLine("4");
-            if (argumentSymbolIndex == -1) return CompletionContext.Empty;
-            //TODO: Bailing out here when on param1 somehow? Is count off?
+
             Debug.WriteLine("argumentSymbolIndex " + argumentSymbolIndex);
             Debug.WriteLine("methodParameterSymbols.Length " + methodParameterSymbols.Length);
             if (argumentSymbolIndex >= methodParameterSymbols.Length) return CompletionContext.Empty;
             Debug.WriteLine("4.1");
             var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
             if (parameterSymbol.Type.Name != "String") return CompletionContext.Empty;
+
             var attributes = parameterSymbol.GetAttributes();
             Debug.WriteLine(parameterSymbol.Name);
             Debug.WriteLine(attributes.Length);
@@ -166,6 +166,7 @@ namespace MemberLens
             //TODO: Handle invalid initial position, or start of argument before typing
             //TODO: Handle "
             //TODO: Exit early if not in method invocation (check for ( to left)
+            //TODO: Handle trivia (space)
             var initial = snapshot[position];
 
             if (position != 0 && (snapshot[position - 1] == '(' || snapshot[position - 1] == ',') || position > 1 && snapshot[position - 1] == ' ' && snapshot[position - 2] == ',')
