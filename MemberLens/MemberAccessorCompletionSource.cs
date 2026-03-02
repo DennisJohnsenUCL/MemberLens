@@ -24,10 +24,10 @@ namespace MemberLens
             var syntaxTree = await doc.GetSyntaxTreeAsync(token);
             if (syntaxTree == null) return CompletionContext.Empty;
 
-            var semanticModel = await doc.GetSemanticModelAsync(token);
-            if (semanticModel == null) return CompletionContext.Empty;
-
             var root = await syntaxTree.GetRootAsync(token);
+
+            if (token.IsCancellationRequested) return CompletionContext.Empty;
+
             var locationToken = root.FindToken(triggerLocation.Position);
             var tokenParent = locationToken.Parent;
             if (tokenParent == null) return CompletionContext.Empty;
@@ -40,6 +40,11 @@ namespace MemberLens
 
             var expressionSyntax = argumentListSyntax.Parent;
             if (expressionSyntax == null) return CompletionContext.Empty;
+
+            var semanticModel = await doc.GetSemanticModelAsync(token);
+            if (semanticModel == null) return CompletionContext.Empty;
+
+            if (token.IsCancellationRequested) return CompletionContext.Empty;
 
             var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
             var methodSymbol = methodSymbolInfo.Symbol as IMethodSymbol;
@@ -109,22 +114,26 @@ namespace MemberLens
             }
             else return CompletionContext.Empty;
 
+            //TODO: Handle out-of-solution types
+
             //TODO: Filter members
 
-            //Better CompletionItem overloads?
+            //TODO: Better CompletionItem overloads?
             var completionItems = sourceMembers.Select(x => new CompletionItem(x.Name, this)).ToImmutableArray();
-            //Better CompletionContext overloads?
+            //TODO: Better CompletionContext overloads?
             var completionContext = new CompletionContext(completionItems);
             return completionContext;
         }
 
         public Task<object> GetDescriptionAsync(IAsyncCompletionSession session, CompletionItem item, CancellationToken token)
         {
-            throw new NotImplementedException();
+            //TODO: Implement
+            return Task.FromResult<object>(string.Empty);
         }
 
         public CompletionStartData InitializeCompletion(CompletionTrigger trigger, SnapshotPoint triggerLocation, CancellationToken token)
         {
+            //TODO: Implement
             throw new NotImplementedException();
         }
     }
