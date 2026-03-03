@@ -1,5 +1,5 @@
-﻿using System.Collections.Immutable;
-using System.Diagnostics;
+﻿using System;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,9 +8,12 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
+using Microsoft.VisualStudio.Core.Imaging;
+using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
 using Microsoft.VisualStudio.Text;
+using Microsoft.VisualStudio.Text.Adornments;
 
 namespace MemberLens
 {
@@ -18,7 +21,6 @@ namespace MemberLens
     {
         public async Task<CompletionContext> GetCompletionContextAsync(IAsyncCompletionSession session, CompletionTrigger trigger, SnapshotPoint triggerLocation, SnapshotSpan applicableToSpan, CancellationToken token)
         {
-            Debug.WriteLine("1");
             var snapshot = triggerLocation.Snapshot;
             var doc = snapshot.GetOpenDocumentInCurrentContextWithChanges();
             if (doc == null) return CompletionContext.Empty;
@@ -29,25 +31,25 @@ namespace MemberLens
             var root = await syntaxTree.GetRootAsync(token);
 
             if (token.IsCancellationRequested) return CompletionContext.Empty;
-            Debug.WriteLine("2");
+
             var position = triggerLocation.Position;
             var locationToken = root.FindToken(position);
             var tokenParent = locationToken.Parent;
             if (tokenParent == null) return CompletionContext.Empty;
-            Debug.WriteLine("2.1");
+
             var argumentListSyntax = tokenParent.FirstAncestorOrSelf<ArgumentListSyntax>();
             if (argumentListSyntax == null) return CompletionContext.Empty;
-            Debug.WriteLine("2.2");
+
             var expressionSyntax = argumentListSyntax.Parent;
             if (expressionSyntax == null) return CompletionContext.Empty;
-            Debug.WriteLine("2.3");
+
             int argumentSymbolIndex = argumentListSyntax.Arguments.GetSeparators().Count(separator => separator.SpanStart < position);
-            Debug.WriteLine("3");
+
             var semanticModel = await doc.GetSemanticModelAsync(token);
             if (semanticModel == null) return CompletionContext.Empty;
-            Debug.WriteLine("3.1");
+
             if (token.IsCancellationRequested) return CompletionContext.Empty;
-            Debug.WriteLine("3.2");
+
             var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
             var methodSymbol = methodSymbolInfo.Symbol as IMethodSymbol;
             if (methodSymbol == null)
@@ -61,32 +63,19 @@ namespace MemberLens
                     if (methodSymbol == null) return CompletionContext.Empty;
                 }
             }
-            Debug.WriteLine("3.3");
             var methodParameterSymbols = methodSymbol.Parameters;
-            Debug.WriteLine("4");
 
-            Debug.WriteLine("argumentSymbolIndex " + argumentSymbolIndex);
-            Debug.WriteLine("methodParameterSymbols.Length " + methodParameterSymbols.Length);
             if (argumentSymbolIndex >= methodParameterSymbols.Length) return CompletionContext.Empty;
-            Debug.WriteLine("4.1");
             var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
             if (parameterSymbol.Type.Name != "String") return CompletionContext.Empty;
 
             var attributes = parameterSymbol.GetAttributes();
-            Debug.WriteLine(parameterSymbol.Name);
-            Debug.WriteLine(attributes.Length);
-            foreach (var item in attributes)
-            {
-                Debug.WriteLine("Attribute class name " + item.AttributeClass?.Name);
-            }
-            Debug.WriteLine(nameof(MemberAccessorAttribute));
+
             var memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
 
             if (memberAccessorAttribute == null) return CompletionContext.Empty;
-            Debug.WriteLine("5");
             var constructorArgs = memberAccessorAttribute.ConstructorArguments;
             if (constructorArgs.Length < 2) return CompletionContext.Empty;
-            Debug.WriteLine("5.1");
             var accessorTypes = (AccessorTypes)(int)constructorArgs[0].Value;
 
             INamedTypeSymbol sourceType = null;
@@ -103,25 +92,20 @@ namespace MemberLens
                 if (genericSources == GenericSources.Method)
                 {
                     if (genericIndex >= methodSymbol.TypeArguments.Length) return CompletionContext.Empty;
-                    Debug.WriteLine("5.2");
                     sourceType = (INamedTypeSymbol)methodSymbol.TypeArguments[genericIndex];
                 }
                 else if (genericSources == GenericSources.Class)
                 {
                     var sourceClass = methodSymbol.ContainingType;
                     if (genericIndex >= sourceClass.TypeArguments.Length) return CompletionContext.Empty;
-                    Debug.WriteLine("5.3");
                     sourceType = (INamedTypeSymbol)sourceClass.TypeArguments[genericIndex];
                 }
                 else return CompletionContext.Empty;
-                Debug.WriteLine("5.4");
             }
             else return CompletionContext.Empty;
-            Debug.WriteLine("5.5");
 
             if (sourceType == null) return CompletionContext.Empty;
 
-            Debug.WriteLine("7");
             ImmutableArray<ISymbol> sourceMembers;
 
             if (accessorTypes == AccessorTypes.Field)
@@ -141,10 +125,20 @@ namespace MemberLens
             //TODO: Filter away based on typing
             //TODO: Handle initial position of menu
 
-            Debug.WriteLine("8");
-            //TODO: Better CompletionItem overloads? Or better CompletionItem/CompletionContext from Roslyn package?
-            var completionItems = sourceMembers.Select(x => new CompletionItem($"\"{x.Name}\"", this)).ToImmutableArray();
-            //TODO: Better CompletionContext overloads?
+            ImageElement icon;
+            switch (accessorTypes)
+            {
+                case AccessorTypes.Field:
+                    icon = new ImageElement(KnownMonikers.Field.ToImageId());
+                    break;
+                case AccessorTypes.Method:
+                    icon = new ImageElement(KnownMonikers.Method.ToImageId());
+                    break;
+                default:
+                    throw new InvalidOperationException();
+            }
+
+            var completionItems = sourceMembers.Select(x => new CompletionItem($"\"{x.Name}\"", this, icon)).ToImmutableArray();
             var completionContext = new CompletionContext(completionItems);
             return completionContext;
         }
@@ -163,13 +157,13 @@ namespace MemberLens
 
             var position = triggerLocation.Position;
 
-            if (position == snapshot.Length)
+            if (position == snapshot.Length || position - 1 < 0)
                 return new CompletionStartData(CompletionParticipation.ProvidesItems, new SnapshotSpan(snapshot, position, 0));
 
-            var initial = snapshot[position];
+            var initial = snapshot[position - 1];
             if (char.IsLetterOrDigit(initial) || initial == '_' || initial == '"')
             {
-                var start = position;
+                var start = position - 1;
                 while (true)
                 {
                     if (start <= 0) break;
@@ -181,7 +175,7 @@ namespace MemberLens
                     }
                 }
 
-                var end = position + 1;
+                var end = position;
                 while (true)
                 {
                     if (end >= snapshot.Length) break;
@@ -194,7 +188,6 @@ namespace MemberLens
                 }
 
                 var snapshotSpan = new SnapshotSpan(snapshot, start, end - start);
-
                 return new CompletionStartData(CompletionParticipation.ProvidesItems, snapshotSpan);
             }
 
