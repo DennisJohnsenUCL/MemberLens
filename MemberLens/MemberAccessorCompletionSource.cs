@@ -20,7 +20,7 @@ namespace MemberLens
         {
             Debug.WriteLine("1");
             var snapshot = triggerLocation.Snapshot;
-            var doc = snapshot.TextBuffer.GetRelatedDocuments().FirstOrDefault();
+            var doc = snapshot.GetOpenDocumentInCurrentContextWithChanges();
             if (doc == null) return CompletionContext.Empty;
 
             var syntaxTree = await doc.GetSyntaxTreeAsync(token);
@@ -135,14 +135,14 @@ namespace MemberLens
             else return CompletionContext.Empty;
 
             //TODO: Handle out-of-solution types
-
             //TODO: Filter away BCL and others
-            //TODO: Filter by current SnapshotSpan
-
+            //Handle inherited methods and fields
             //TODO: Filter .ctor methods
+            //TODO: Filter away based on typing
+            //TODO: Handle initial position of menu
 
             Debug.WriteLine("8");
-            //TODO: Better CompletionItem overloads?
+            //TODO: Better CompletionItem overloads? Or better CompletionItem/CompletionContext from Roslyn package?
             var completionItems = sourceMembers.Select(x => new CompletionItem($"\"{x.Name}\"", this)).ToImmutableArray();
             //TODO: Better CompletionContext overloads?
             var completionContext = new CompletionContext(completionItems);
@@ -158,50 +158,47 @@ namespace MemberLens
         public CompletionStartData InitializeCompletion(CompletionTrigger trigger, SnapshotPoint triggerLocation, CancellationToken token)
         {
             var snapshot = triggerLocation.Snapshot;
-            var doc = snapshot.TextBuffer.GetRelatedDocuments().FirstOrDefault();
-            if (doc == null) return CompletionStartData.DoesNotParticipateInCompletion;
+            if (!snapshot.TextBuffer.GetRelatedDocuments().Any())
+                return CompletionStartData.DoesNotParticipateInCompletion;
 
             var position = triggerLocation.Position;
 
-            //TODO: Handle invalid initial position, or start of argument before typing
-            //TODO: Handle "
-            //TODO: Exit early if not in method invocation (check for ( to left)
-            //TODO: Handle trivia (space)
-            var initial = snapshot[position];
-
-            if (position != 0 && (snapshot[position - 1] == '(' || snapshot[position - 1] == ',') || position > 1 && snapshot[position - 1] == ' ' && snapshot[position - 2] == ',')
+            if (position == snapshot.Length)
                 return new CompletionStartData(CompletionParticipation.ProvidesItems, new SnapshotSpan(snapshot, position, 0));
 
-            if (!char.IsLetterOrDigit(initial) && initial != '_')
-                return CompletionStartData.DoesNotParticipateInCompletion;
-
-            var start = position;
-            while (true)
+            var initial = snapshot[position];
+            if (char.IsLetterOrDigit(initial) || initial == '_' || initial == '"')
             {
-                if (start == 0) break;
-                var c = snapshot[start - 1];
-                if (!char.IsLetterOrDigit(c) && c != '_') break;
-                else
+                var start = position;
+                while (true)
                 {
-                    start--;
+                    if (start <= 0) break;
+                    var c = snapshot[start - 1];
+                    if (!char.IsLetterOrDigit(c) && c != '_' && c != '"') break;
+                    else
+                    {
+                        start--;
+                    }
                 }
+
+                var end = position + 1;
+                while (true)
+                {
+                    if (end >= snapshot.Length) break;
+                    var c = snapshot[end];
+                    if (!char.IsLetterOrDigit(c) && c != '_' && c != '"') break;
+                    else
+                    {
+                        end++;
+                    }
+                }
+
+                var snapshotSpan = new SnapshotSpan(snapshot, start, end - start);
+
+                return new CompletionStartData(CompletionParticipation.ProvidesItems, snapshotSpan);
             }
 
-            var end = position + 1;
-            while (true)
-            {
-                if (end == snapshot.Length - 1) break;
-                var c = snapshot[end];
-                if (!char.IsLetterOrDigit(c) && c != '_') break;
-                else
-                {
-                    end++;
-                }
-            }
-
-            var snapshotSpan = new SnapshotSpan(snapshot, start, end - start);
-
-            return new CompletionStartData(CompletionParticipation.ProvidesItems, snapshotSpan);
+            return new CompletionStartData(CompletionParticipation.ProvidesItems, new SnapshotSpan(snapshot, position, 0));
         }
     }
 }

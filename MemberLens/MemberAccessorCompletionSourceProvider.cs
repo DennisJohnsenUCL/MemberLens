@@ -1,7 +1,7 @@
-﻿using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
+﻿using System.ComponentModel.Composition;
+using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.Utilities;
-using System.ComponentModel.Composition;
 
 namespace MemberLens
 {
@@ -13,7 +13,6 @@ namespace MemberLens
     {
         public IAsyncCompletionSource GetOrCreate(ITextView textView)
         {
-            //TODO: Implement
             return new MemberAccessorCompletionSource();
         }
     }
