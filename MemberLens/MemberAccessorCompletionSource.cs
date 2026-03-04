@@ -1,4 +1,9 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using System;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
@@ -8,11 +13,6 @@ using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Adornments;
-using System;
-using System.Collections.Immutable;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace MemberLens
 {
@@ -51,28 +51,46 @@ namespace MemberLens
 
             var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
             var methodSymbol = methodSymbolInfo.Symbol as IMethodSymbol;
+
+            AttributeData memberAccessorAttribute = null;
             if (methodSymbol == null)
             {
                 var candidateSymbols = methodSymbolInfo.CandidateSymbols;
                 if (candidateSymbols.Length == 0) return CompletionContext.Empty;
-                //TODO: Iterate through and try to find one with MemberAccessor
-                else
+
+                foreach (var candidateSymbol in candidateSymbols.Cast<IMethodSymbol>())
                 {
-                    methodSymbol = candidateSymbols[0] as IMethodSymbol;
-                    if (methodSymbol == null) return CompletionContext.Empty;
+                    var methodParameterSymbols = candidateSymbol.Parameters;
+                    if (argumentSymbolIndex >= methodParameterSymbols.Length) continue;
+
+                    var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
+                    if (parameterSymbol.Type.Name != "String") continue;
+
+                    var attributes = parameterSymbol.GetAttributes();
+
+                    memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
+                    if (memberAccessorAttribute == null) continue;
+
+                    methodSymbol = candidateSymbol;
+                    break;
                 }
             }
-            var methodParameterSymbols = methodSymbol.Parameters;
+            else
+            {
+                var methodParameterSymbols = methodSymbol.Parameters;
+                if (argumentSymbolIndex >= methodParameterSymbols.Length) return CompletionContext.Empty;
 
-            if (argumentSymbolIndex >= methodParameterSymbols.Length) return CompletionContext.Empty;
-            var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
-            if (parameterSymbol.Type.Name != "String") return CompletionContext.Empty;
+                var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
+                if (parameterSymbol.Type.Name != "String") return CompletionContext.Empty;
 
-            var attributes = parameterSymbol.GetAttributes();
+                var attributes = parameterSymbol.GetAttributes();
 
-            var memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
+                memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
+                if (memberAccessorAttribute == null) return CompletionContext.Empty;
+            }
 
-            if (memberAccessorAttribute == null) return CompletionContext.Empty;
+            if (methodSymbol == null) return CompletionContext.Empty;
+
             var constructorArgs = memberAccessorAttribute.ConstructorArguments;
             if (constructorArgs.Length < 2) return CompletionContext.Empty;
             var accessorTypes = (AccessorTypes)(int)constructorArgs[0].Value;
@@ -122,6 +140,7 @@ namespace MemberLens
             //Handle inherited methods and fields
             //TODO: Filter away based on typing?
             //TODO: Handle initial position of menu
+            //TODO: DisplayText: ClassName.Member?
 
             ImageElement icon;
             switch (accessorTypes)
@@ -155,6 +174,7 @@ namespace MemberLens
             if (!(item.Properties.GetProperty("symbol") is ISymbol symbol))
                 return Task.FromResult<object>(string.Empty);
 
+            //TODO: Go To Definition?
             return SymbolTooltipBuilder.Build(symbol, token);
         }
 
