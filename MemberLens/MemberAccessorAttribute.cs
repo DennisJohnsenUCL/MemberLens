@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace FixtureBuilder
+namespace MemberLens
 {
     //TODO: Delete when NuGet
     [AttributeUsage(AttributeTargets.Parameter)]
@@ -27,7 +27,6 @@ namespace FixtureBuilder
 
     internal enum AccessorTypes
     {
-        All,
         Field,
         Method
     }

@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Immutable;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using FixtureBuilder;
-using Microsoft.CodeAnalysis;
+﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
@@ -14,6 +8,11 @@ using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Adornments;
+using System;
+using System.Collections.Immutable;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace MemberLens
 {
@@ -121,8 +120,7 @@ namespace MemberLens
             //TODO: Handle out-of-solution types
             //TODO: Filter away BCL and others
             //Handle inherited methods and fields
-            //TODO: Filter .ctor methods
-            //TODO: Filter away based on typing
+            //TODO: Filter away based on typing?
             //TODO: Handle initial position of menu
 
             ImageElement icon;
@@ -138,15 +136,26 @@ namespace MemberLens
                     throw new InvalidOperationException();
             }
 
-            var completionItems = sourceMembers.Select(x => new CompletionItem($"\"{x.Name}\"", this, icon)).ToImmutableArray();
+            var completionItems = sourceMembers
+                .Where(symbol => symbol.Name != ".ctor")
+                .Select(symbol =>
+                {
+                    var item = new CompletionItem($"\"{symbol.Name}\"", this, icon);
+                    item.Properties.AddProperty("symbol", symbol);
+                    return item;
+                })
+                .ToImmutableArray();
+
             var completionContext = new CompletionContext(completionItems);
             return completionContext;
         }
 
-        public Task<object> GetDescriptionAsync(IAsyncCompletionSession session, CompletionItem item, CancellationToken token)
+        public async Task<object> GetDescriptionAsync(IAsyncCompletionSession session, CompletionItem item, CancellationToken token)
         {
-            //TODO: Implement
-            return Task.FromResult<object>(string.Empty);
+            if (!(item.Properties.GetProperty("symbol") is ISymbol symbol))
+                return Task.FromResult<object>(string.Empty);
+
+            return SymbolTooltipBuilder.Build(symbol, token);
         }
 
         public CompletionStartData InitializeCompletion(CompletionTrigger trigger, SnapshotPoint triggerLocation, CancellationToken token)
