@@ -20,152 +20,26 @@ namespace MemberLens
     {
         public async Task<CompletionContext> GetCompletionContextAsync(IAsyncCompletionSession session, CompletionTrigger trigger, SnapshotPoint triggerLocation, SnapshotSpan applicableToSpan, CancellationToken token)
         {
-            var snapshot = triggerLocation.Snapshot;
-            var doc = snapshot.GetOpenDocumentInCurrentContextWithChanges();
-            if (doc == null) return CompletionContext.Empty;
+            var symbolInfos = await GetSymbolInfosAsync(triggerLocation, token);
+            if (symbolInfos == null) return CompletionContext.Empty;
+            var (methodSymbolInfo, argumentSymbolIndex) = symbolInfos.Value;
 
-            var syntaxTree = await doc.GetSyntaxTreeAsync(token);
-            if (syntaxTree == null) return CompletionContext.Empty;
-
-            var root = await syntaxTree.GetRootAsync(token);
-
-            if (token.IsCancellationRequested) return CompletionContext.Empty;
-
-            var position = triggerLocation.Position;
-            var locationToken = root.FindToken(position);
-            var tokenParent = locationToken.Parent;
-            if (tokenParent == null) return CompletionContext.Empty;
-
-            var argumentListSyntax = tokenParent.FirstAncestorOrSelf<ArgumentListSyntax>();
-            if (argumentListSyntax == null) return CompletionContext.Empty;
-
-            var expressionSyntax = argumentListSyntax.Parent;
-            if (expressionSyntax == null) return CompletionContext.Empty;
-
-            int argumentSymbolIndex = argumentListSyntax.Arguments.GetSeparators().Count(separator => separator.SpanStart < position);
-
-            var semanticModel = await doc.GetSemanticModelAsync(token);
-            if (semanticModel == null) return CompletionContext.Empty;
-
-            if (token.IsCancellationRequested) return CompletionContext.Empty;
-
-            var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
-            var methodSymbol = methodSymbolInfo.Symbol as IMethodSymbol;
-
-            AttributeData memberAccessorAttribute = null;
-            if (methodSymbol == null)
-            {
-                var candidateSymbols = methodSymbolInfo.CandidateSymbols;
-                if (candidateSymbols.Length == 0) return CompletionContext.Empty;
-
-                foreach (var candidateSymbol in candidateSymbols.Cast<IMethodSymbol>())
-                {
-                    var methodParameterSymbols = candidateSymbol.Parameters;
-                    if (argumentSymbolIndex >= methodParameterSymbols.Length) continue;
-
-                    var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
-                    if (parameterSymbol.Type.Name != "String") continue;
-
-                    var attributes = parameterSymbol.GetAttributes();
-
-                    memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
-                    if (memberAccessorAttribute == null) continue;
-
-                    methodSymbol = candidateSymbol;
-                    break;
-                }
-            }
-            else
-            {
-                var methodParameterSymbols = methodSymbol.Parameters;
-                if (argumentSymbolIndex >= methodParameterSymbols.Length) return CompletionContext.Empty;
-
-                var parameterSymbol = methodParameterSymbols[argumentSymbolIndex];
-                if (parameterSymbol.Type.Name != "String") return CompletionContext.Empty;
-
-                var attributes = parameterSymbol.GetAttributes();
-
-                memberAccessorAttribute = attributes.FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
-                if (memberAccessorAttribute == null) return CompletionContext.Empty;
-            }
-
-            if (methodSymbol == null) return CompletionContext.Empty;
+            var symbolAndAttribute = GetSymbolAndAttribute(methodSymbolInfo, argumentSymbolIndex);
+            if (symbolAndAttribute == null) return CompletionContext.Empty;
+            var (methodSymbol, memberAccessorAttribute) = symbolAndAttribute.Value;
 
             var constructorArgs = memberAccessorAttribute.ConstructorArguments;
             if (constructorArgs.Length < 2) return CompletionContext.Empty;
-            var accessorTypes = (AccessorTypes)(int)constructorArgs[0].Value;
 
-            INamedTypeSymbol sourceType = null;
-
-            if (constructorArgs[1].Kind == TypedConstantKind.Type)
-            {
-                sourceType = (INamedTypeSymbol)constructorArgs[1].Value;
-            }
-            else if (constructorArgs.Length >= 3)
-            {
-                var genericSources = (GenericSources)(int)constructorArgs[1].Value;
-                var genericIndex = (int)constructorArgs[2].Value;
-
-                if (genericSources == GenericSources.Method)
-                {
-                    if (genericIndex >= methodSymbol.TypeArguments.Length) return CompletionContext.Empty;
-                    sourceType = (INamedTypeSymbol)methodSymbol.TypeArguments[genericIndex];
-                }
-                else if (genericSources == GenericSources.Class)
-                {
-                    var sourceClass = methodSymbol.ContainingType;
-                    if (genericIndex >= sourceClass.TypeArguments.Length) return CompletionContext.Empty;
-                    sourceType = (INamedTypeSymbol)sourceClass.TypeArguments[genericIndex];
-                }
-                else return CompletionContext.Empty;
-            }
-            else return CompletionContext.Empty;
-
+            var sourceType = GetSourceType(methodSymbol, constructorArgs);
             if (sourceType == null) return CompletionContext.Empty;
 
-            ImmutableArray<ISymbol> sourceMembers;
+            var accessorTypes = (AccessorTypes)(int)constructorArgs[0].Value;
 
-            if (accessorTypes == AccessorTypes.Field)
-            {
-                sourceMembers = sourceType.GetMembers().OfType<IFieldSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
-            }
-            else if (accessorTypes == AccessorTypes.Method)
-            {
-                sourceMembers = sourceType.GetMembers().OfType<IMethodSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
-            }
-            else return CompletionContext.Empty;
+            var completionItems = GetCompletionItems(sourceType, accessorTypes, this);
+            if (completionItems == null) return CompletionContext.Empty;
 
-            //TODO: Handle out-of-solution types
-            //TODO: Filter away BCL and others
-            //Handle inherited methods and fields
-            //TODO: Filter away based on typing?
-            //TODO: Handle initial position of menu
-            //TODO: DisplayText: ClassName.Member?
-
-            ImageElement icon;
-            switch (accessorTypes)
-            {
-                case AccessorTypes.Field:
-                    icon = new ImageElement(KnownMonikers.Field.ToImageId());
-                    break;
-                case AccessorTypes.Method:
-                    icon = new ImageElement(KnownMonikers.Method.ToImageId());
-                    break;
-                default:
-                    throw new InvalidOperationException();
-            }
-
-            var completionItems = sourceMembers
-                .Where(symbol => symbol.Name != ".ctor")
-                .Select(symbol =>
-                {
-                    var item = new CompletionItem($"\"{symbol.Name}\"", this, icon);
-                    item.Properties.AddProperty("symbol", symbol);
-                    return item;
-                })
-                .ToImmutableArray();
-
-            var completionContext = new CompletionContext(completionItems);
+            var completionContext = new CompletionContext(completionItems.Value);
             return completionContext;
         }
 
@@ -174,7 +48,6 @@ namespace MemberLens
             if (!(item.Properties.GetProperty("symbol") is ISymbol symbol))
                 return Task.FromResult<object>(string.Empty);
 
-            //TODO: Go To Definition?
             return SymbolTooltipBuilder.Build(symbol, token);
         }
 
@@ -192,35 +65,176 @@ namespace MemberLens
             var initial = snapshot[position - 1];
             if (char.IsLetterOrDigit(initial) || initial == '_' || initial == '"')
             {
-                var start = position - 1;
-                while (true)
-                {
-                    if (start <= 0) break;
-                    var c = snapshot[start - 1];
-                    if (!char.IsLetterOrDigit(c) && c != '_' && c != '"') break;
-                    else
-                    {
-                        start--;
-                    }
-                }
-
-                var end = position;
-                while (true)
-                {
-                    if (end >= snapshot.Length) break;
-                    var c = snapshot[end];
-                    if (!char.IsLetterOrDigit(c) && c != '_' && c != '"') break;
-                    else
-                    {
-                        end++;
-                    }
-                }
+                var (start, end) = GetApplicableSpanBounds(snapshot, position);
 
                 var snapshotSpan = new SnapshotSpan(snapshot, start, end - start);
                 return new CompletionStartData(CompletionParticipation.ProvidesItems, snapshotSpan);
             }
 
             return new CompletionStartData(CompletionParticipation.ProvidesItems, new SnapshotSpan(snapshot, position, 0));
+        }
+
+        private static async Task<(SymbolInfo MethodSymbolInfo, int ArgumentSymbolIndex)?> GetSymbolInfosAsync(SnapshotPoint triggerLocation, CancellationToken token = default)
+        {
+            var doc = triggerLocation.Snapshot.GetOpenDocumentInCurrentContextWithChanges();
+            if (doc == null) return null;
+
+            var syntaxTree = await doc.GetSyntaxTreeAsync(token);
+            if (syntaxTree == null) return null;
+
+            var root = await syntaxTree.GetRootAsync(token);
+
+            if (token.IsCancellationRequested) return null;
+
+            var position = triggerLocation.Position;
+            var tokenParent = root.FindToken(position).Parent;
+            if (tokenParent == null) return null;
+
+            var argumentListSyntax = tokenParent.FirstAncestorOrSelf<ArgumentListSyntax>();
+            if (argumentListSyntax == null) return null;
+
+            var expressionSyntax = argumentListSyntax.Parent;
+            if (expressionSyntax == null) return null;
+
+            var semanticModel = await doc.GetSemanticModelAsync(token);
+            if (semanticModel == null) return null;
+
+            if (token.IsCancellationRequested) return null;
+
+            var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
+            int argumentSymbolIndex = argumentListSyntax.Arguments.GetSeparators().Count(separator => separator.SpanStart < position);
+
+            return (methodSymbolInfo, argumentSymbolIndex);
+        }
+
+        private static (IMethodSymbol MethodSymbol, AttributeData MemberAccessorAttribute)? GetSymbolAndAttribute(
+            SymbolInfo methodSymbolInfo, int argumentSymbolIndex)
+        {
+            var candidates = methodSymbolInfo.Symbol is IMethodSymbol directMatch
+                ? new[] { directMatch }
+                : methodSymbolInfo.CandidateSymbols.Cast<IMethodSymbol>();
+
+            foreach (var candidate in candidates)
+            {
+                if (argumentSymbolIndex >= candidate.Parameters.Length) continue;
+
+                var parameterSymbol = candidate.Parameters[argumentSymbolIndex];
+                if (parameterSymbol.Type.Name != "String") continue;
+
+                var memberAccessorAttribute = parameterSymbol.GetAttributes()
+                    .FirstOrDefault(ad => ad.AttributeClass?.Name == nameof(MemberAccessorAttribute));
+                if (memberAccessorAttribute == null) continue;
+
+                return (candidate, memberAccessorAttribute);
+            }
+
+            return null;
+        }
+
+        private static INamedTypeSymbol GetSourceType(IMethodSymbol methodSymbol, ImmutableArray<TypedConstant> constructorArgs)
+        {
+            INamedTypeSymbol sourceType;
+            if (constructorArgs[1].Kind == TypedConstantKind.Type)
+            {
+                sourceType = (INamedTypeSymbol)constructorArgs[1].Value;
+            }
+            else if (constructorArgs.Length == 3)
+            {
+                var genericSources = (GenericSources)(int)constructorArgs[1].Value;
+                var genericIndex = (int)constructorArgs[2].Value;
+
+                if (genericSources == GenericSources.Method)
+                {
+                    if (genericIndex >= methodSymbol.TypeArguments.Length) return null;
+                    sourceType = (INamedTypeSymbol)methodSymbol.TypeArguments[genericIndex];
+                }
+                else if (genericSources == GenericSources.Class)
+                {
+                    var sourceClass = methodSymbol.ContainingType;
+                    if (genericIndex >= sourceClass.TypeArguments.Length) return null;
+                    sourceType = (INamedTypeSymbol)sourceClass.TypeArguments[genericIndex];
+                }
+                else return null;
+            }
+            else return null;
+
+            return sourceType;
+        }
+
+        private static ImmutableArray<CompletionItem>? GetCompletionItems(INamedTypeSymbol sourceType, AccessorTypes accessorTypes, MemberAccessorCompletionSource source)
+        {
+            ImmutableArray<ISymbol> sourceMembers;
+
+            if (accessorTypes == AccessorTypes.Field)
+            {
+                sourceMembers = sourceType.GetMembers().OfType<IFieldSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
+            }
+            else if (accessorTypes == AccessorTypes.Method)
+            {
+                sourceMembers = sourceType.GetMembers().OfType<IMethodSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
+            }
+            else return null;
+
+            var icon = GetIcon(accessorTypes);
+
+            var completionItems = sourceMembers
+                .Where(symbol => symbol.Name != ".ctor")
+                .Select(symbol =>
+                {
+                    var item = new CompletionItem($"\"{symbol.Name}\"", source, icon);
+                    item.Properties.AddProperty("symbol", symbol);
+                    return item;
+                })
+                .ToImmutableArray();
+
+            return completionItems;
+        }
+
+        private static ImageElement GetIcon(AccessorTypes accessorTypes)
+        {
+            ImageElement icon;
+            switch (accessorTypes)
+            {
+                case AccessorTypes.Field:
+                    icon = new ImageElement(KnownMonikers.Field.ToImageId());
+                    break;
+                case AccessorTypes.Method:
+                    icon = new ImageElement(KnownMonikers.Method.ToImageId());
+                    break;
+                default:
+                    throw new InvalidOperationException();
+            }
+
+            return icon;
+        }
+
+        private static (int Start, int End) GetApplicableSpanBounds(ITextSnapshot snapshot, int position)
+        {
+            var start = position - 1;
+            while (true)
+            {
+                if (start <= 0) break;
+                var c = snapshot[start - 1];
+                if (!char.IsLetterOrDigit(c) && c != '_' && c != '"') break;
+                else
+                {
+                    start--;
+                }
+            }
+
+            var end = position;
+            while (true)
+            {
+                if (end >= snapshot.Length) break;
+                var c = snapshot[end];
+                if (!char.IsLetterOrDigit(c) && c != '_' && c != '"') break;
+                else
+                {
+                    end++;
+                }
+            }
+
+            return (start, end);
         }
     }
 }
