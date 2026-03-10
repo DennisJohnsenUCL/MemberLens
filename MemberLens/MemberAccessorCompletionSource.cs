@@ -66,9 +66,7 @@ namespace MemberLens
             var initial = snapshot[position - 1];
             if (char.IsLetterOrDigit(initial) || initial == '_' || initial == '"')
             {
-                var (start, end) = GetApplicableSpanBounds(snapshot, position);
-
-                var snapshotSpan = new SnapshotSpan(snapshot, start, end - start);
+                var snapshotSpan = GetSnapshotSpan(snapshot, position);
                 return new CompletionStartData(CompletionParticipation.ProvidesItems, snapshotSpan);
             }
 
@@ -209,7 +207,7 @@ namespace MemberLens
             return icon;
         }
 
-        private static (int Start, int End) GetApplicableSpanBounds(ITextSnapshot snapshot, int position)
+        private static SnapshotSpan GetSnapshotSpan(ITextSnapshot snapshot, int position)
         {
             var start = position - 1;
             while (true)
@@ -235,7 +233,7 @@ namespace MemberLens
                 }
             }
 
-            return (start, end);
+            return new SnapshotSpan(snapshot, start, end - start);
         }
     }
 }
