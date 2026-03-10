@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using MemberLens.Attributes;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -34,7 +35,7 @@ namespace MemberLens
             var sourceType = GetSourceType(methodSymbol, constructorArgs);
             if (sourceType == null) return CompletionContext.Empty;
 
-            var accessorTypes = (AccessorTypes)(int)constructorArgs[0].Value;
+            var accessorTypes = (AccessorType)(int)constructorArgs[0].Value;
 
             var completionItems = GetCompletionItems(sourceType, accessorTypes, this);
             if (completionItems == null) return CompletionContext.Empty;
@@ -140,15 +141,15 @@ namespace MemberLens
             }
             else if (constructorArgs.Length == 3)
             {
-                var genericSources = (GenericSources)(int)constructorArgs[1].Value;
+                var genericSources = (GenericSource)(int)constructorArgs[1].Value;
                 var genericIndex = (int)constructorArgs[2].Value;
 
-                if (genericSources == GenericSources.Method)
+                if (genericSources == GenericSource.Method)
                 {
                     if (genericIndex >= methodSymbol.TypeArguments.Length) return null;
                     sourceType = (INamedTypeSymbol)methodSymbol.TypeArguments[genericIndex];
                 }
-                else if (genericSources == GenericSources.Class)
+                else if (genericSources == GenericSource.Class)
                 {
                     var sourceClass = methodSymbol.ContainingType;
                     if (genericIndex >= sourceClass.TypeArguments.Length) return null;
@@ -161,15 +162,15 @@ namespace MemberLens
             return sourceType;
         }
 
-        private static ImmutableArray<CompletionItem>? GetCompletionItems(INamedTypeSymbol sourceType, AccessorTypes accessorTypes, MemberAccessorCompletionSource source)
+        private static ImmutableArray<CompletionItem>? GetCompletionItems(INamedTypeSymbol sourceType, AccessorType accessorTypes, MemberAccessorCompletionSource source)
         {
             ImmutableArray<ISymbol> sourceMembers;
 
-            if (accessorTypes == AccessorTypes.Field)
+            if (accessorTypes == AccessorType.Field)
             {
                 sourceMembers = sourceType.GetMembers().OfType<IFieldSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
             }
-            else if (accessorTypes == AccessorTypes.Method)
+            else if (accessorTypes == AccessorType.Method)
             {
                 sourceMembers = sourceType.GetMembers().OfType<IMethodSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
             }
@@ -190,15 +191,15 @@ namespace MemberLens
             return completionItems;
         }
 
-        private static ImageElement GetIcon(AccessorTypes accessorTypes)
+        private static ImageElement GetIcon(AccessorType accessorTypes)
         {
             ImageElement icon;
             switch (accessorTypes)
             {
-                case AccessorTypes.Field:
+                case AccessorType.Field:
                     icon = new ImageElement(KnownMonikers.Field.ToImageId());
                     break;
-                case AccessorTypes.Method:
+                case AccessorType.Method:
                     icon = new ImageElement(KnownMonikers.Method.ToImageId());
                     break;
                 default:
