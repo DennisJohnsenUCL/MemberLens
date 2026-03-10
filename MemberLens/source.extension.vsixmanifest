@@ -3,7 +3,8 @@
     <Metadata>
         <Identity Id="MemberLens.772562cf-8720-424a-8882-2a0b393a051d" Version="1.0" Language="en-US" Publisher="Dennis Johnsen" />
         <DisplayName>MemberLens</DisplayName>
-        <Description xml:space="preserve">Provide autocomplete suggestions for MemberAcccessor-decorated string parameters.</Description>
+        <Description xml:space="preserve">Provide autocomplete suggestions for MemberAccessor-decorated string parameters.</Description>
+        <License>LICENSE.txt</License>
     </Metadata>
     <Installation>
         <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0, )">
