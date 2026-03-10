@@ -1,10 +1,10 @@
-﻿using Microsoft.CodeAnalysis;
-using Microsoft.VisualStudio.Language.StandardClassification;
-using Microsoft.VisualStudio.Text.Adornments;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Xml.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.VisualStudio.Language.StandardClassification;
+using Microsoft.VisualStudio.Text.Adornments;
 
 namespace MemberLens
 {
@@ -30,7 +30,6 @@ namespace MemberLens
         {
             var elements = new List<object>();
 
-            // 1️⃣ Signature
             var signatureParts = symbol.ToDisplayParts(SignatureFormat);
 
             var signatureRuns = signatureParts
@@ -41,7 +40,6 @@ namespace MemberLens
 
             elements.Add(new ClassifiedTextElement(signatureRuns));
 
-            // 2️⃣ Documentation summary
             var xml = symbol.GetDocumentationCommentXml(cancellationToken: cancellationToken);
             var summaryText = ExtractSummary(xml);
 
