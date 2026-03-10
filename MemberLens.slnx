@@ -4,7 +4,7 @@
     <Platform Name="arm64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="MemberLens/MemberLens.csproj">
+  <Project Path="MemberLens/MemberLens.csproj" Id="5db1feeb-1992-41fb-b5e0-46f528e5de75">
     <Platform Solution="*|arm64" Project="arm64" />
     <Platform Solution="*|x86" Project="x86" />
   </Project>
