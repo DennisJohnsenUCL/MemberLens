@@ -180,7 +180,16 @@ namespace MemberLens
                 .Where(symbol => symbol.Name != ".ctor")
                 .Select(symbol =>
                 {
-                    var item = new CompletionItem($"\"{symbol.Name}\"", source, icon);
+                    var item = new CompletionItem(
+                        displayText: symbol.Name,
+                        source: source,
+                        icon: icon,
+                        filters: ImmutableArray<CompletionFilter>.Empty,
+                        suffix: string.Empty,
+                        insertText: $"\"{symbol.Name}\"",
+                        sortText: $"\"{symbol.Name}\"",
+                        filterText: $"\"{symbol.Name}\"",
+                        attributeIcons: ImmutableArray<ImageElement>.Empty);
                     item.Properties.AddProperty("symbol", symbol);
                     return item;
                 })
