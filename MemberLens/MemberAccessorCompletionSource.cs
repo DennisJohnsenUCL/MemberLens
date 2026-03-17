@@ -1,6 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Linq;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Threading;
 using System.Threading.Tasks;
 using MemberLens.Attributes;
@@ -17,15 +21,30 @@ using Microsoft.VisualStudio.Text.Adornments;
 
 namespace MemberLens
 {
+    internal class CompletionSymbolContext
+    {
+        public SymbolInfo MethodSymbolInfo { get; }
+        public int ArgumentIndex { get; }
+        public SemanticModel SemanticModel { get; }
+
+        public CompletionSymbolContext(SymbolInfo methodSymbolInfo, int argumentIndex, SemanticModel semanticModel)
+        {
+            MethodSymbolInfo = methodSymbolInfo;
+            ArgumentIndex = argumentIndex;
+            SemanticModel = semanticModel;
+        }
+    }
+
     internal class MemberAccessorCompletionSource : IAsyncCompletionSource
     {
+        //TODO: Empty() method.
+
         public async Task<CompletionContext> GetCompletionContextAsync(IAsyncCompletionSession session, CompletionTrigger trigger, SnapshotPoint triggerLocation, SnapshotSpan applicableToSpan, CancellationToken token)
         {
-            var symbolInfos = await GetSymbolInfosAsync(triggerLocation, token);
-            if (symbolInfos == null) return CompletionContext.Empty;
-            var (methodSymbolInfo, argumentSymbolIndex) = symbolInfos.Value;
+            var symCtx = await GetSymbolContextAsync(triggerLocation, token);
+            if (symCtx == null) return CompletionContext.Empty;
 
-            var symbolAndAttribute = GetSymbolAndAttribute(methodSymbolInfo, argumentSymbolIndex);
+            var symbolAndAttribute = GetSymbolAndAttribute(symCtx.MethodSymbolInfo, symCtx.ArgumentIndex);
             if (symbolAndAttribute == null) return CompletionContext.Empty;
             var (methodSymbol, memberAccessorAttribute) = symbolAndAttribute.Value;
 
@@ -37,7 +56,17 @@ namespace MemberLens
 
             var accessorTypes = (AccessorType)(int)constructorArgs[0].Value;
 
-            var completionItems = GetCompletionItems(sourceType, accessorTypes, this);
+            ImmutableArray<CompletionItem>? completionItems;
+            if (sourceType.Locations[0].IsInSource)
+            {
+                completionItems = GetSourceCompletionItems(sourceType, accessorTypes, this);
+            }
+            else if (sourceType.Locations[0].IsInMetadata)
+            {
+                completionItems = GetMetadataCompletionItems(sourceType, accessorTypes, this, symCtx.SemanticModel);
+            }
+            else return CompletionContext.Empty;
+
             if (completionItems == null) return CompletionContext.Empty;
 
             var completionContext = new CompletionContext(completionItems.Value);
@@ -73,7 +102,7 @@ namespace MemberLens
             return new CompletionStartData(CompletionParticipation.ProvidesItems, new SnapshotSpan(snapshot, position, 0));
         }
 
-        private static async Task<(SymbolInfo MethodSymbolInfo, int ArgumentSymbolIndex)?> GetSymbolInfosAsync(SnapshotPoint triggerLocation, CancellationToken token = default)
+        private static async Task<CompletionSymbolContext> GetSymbolContextAsync(SnapshotPoint triggerLocation, CancellationToken token = default)
         {
             var doc = triggerLocation.Snapshot.GetOpenDocumentInCurrentContextWithChanges();
             if (doc == null) return null;
@@ -101,9 +130,9 @@ namespace MemberLens
             if (token.IsCancellationRequested) return null;
 
             var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
-            int argumentSymbolIndex = argumentListSyntax.Arguments.GetSeparators().Count(separator => separator.SpanStart < position);
+            int argumentIndex = argumentListSyntax.Arguments.GetSeparators().Count(separator => separator.SpanStart < position);
 
-            return (methodSymbolInfo, argumentSymbolIndex);
+            return new CompletionSymbolContext(methodSymbolInfo, argumentIndex, semanticModel);
         }
 
         private static (IMethodSymbol MethodSymbol, AttributeData MemberAccessorAttribute)? GetSymbolAndAttribute(
@@ -160,17 +189,17 @@ namespace MemberLens
             return sourceType;
         }
 
-        private static ImmutableArray<CompletionItem>? GetCompletionItems(INamedTypeSymbol sourceType, AccessorType accessorTypes, MemberAccessorCompletionSource source)
+        private static ImmutableArray<CompletionItem>? GetSourceCompletionItems(INamedTypeSymbol sourceType, AccessorType accessorTypes, MemberAccessorCompletionSource source)
         {
-            ImmutableArray<ISymbol> sourceMembers;
+            IEnumerable<ISymbol> sourceMembers;
 
             if (accessorTypes == AccessorType.Field)
             {
-                sourceMembers = sourceType.GetMembers().OfType<IFieldSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
+                sourceMembers = sourceType.GetMembers().OfType<IFieldSymbol>().Select(x => (ISymbol)x);
             }
             else if (accessorTypes == AccessorType.Method)
             {
-                sourceMembers = sourceType.GetMembers().OfType<IMethodSymbol>().Select(x => (ISymbol)x).ToImmutableArray();
+                sourceMembers = sourceType.GetMembers().OfType<IMethodSymbol>().Select(x => (ISymbol)x);
             }
             else return null;
 
@@ -247,6 +276,135 @@ namespace MemberLens
             }
 
             return new SnapshotSpan(snapshot, start, end - start);
+        }
+
+        private static ImmutableArray<CompletionItem>? GetMetadataCompletionItems(
+            INamedTypeSymbol sourceType,
+            AccessorType accessorType,
+            MemberAccessorCompletionSource source,
+            SemanticModel semanticModel)
+        {
+            //TODO: Rebuild Nuget project, add generic source class, nested source class, test match
+
+            var compilation = semanticModel.Compilation;
+
+            //TODO: Filter out sourceType.ContainingAssembly.Name.StartsWith("System., Microsoft.");
+
+            if (!(compilation.GetMetadataReference(
+                sourceType.ContainingAssembly) is PortableExecutableReference reference)) return null;
+
+            var path = reference.FilePath;
+            if (path == null) return null;
+
+            using (var stream = File.OpenRead(path))
+            using (var peReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata))
+            {
+                var mdReader = peReader.GetMetadataReader();
+
+                var sourceFullName = BuildFullName(sourceType);
+
+                var match = mdReader.TypeDefinitions
+                    .Where(h => mdReader.GetString(mdReader.GetTypeDefinition(h).Name) == sourceType.MetadataName)
+                    .FirstOrDefault(td => BuildFullName(mdReader, td) == sourceFullName);
+
+                //TODO: This probably does nothing. Find a better way.
+                if (match.IsNil) return null;
+
+                //TODO: Filter out explicit interfaces implementations -> .Contains(".")
+
+                if (accessorType == AccessorType.Field)
+                {
+                    var typeDef = mdReader.GetTypeDefinition(match);
+                    var icon = new ImageElement(KnownMonikers.Field.ToImageId());
+
+                    return typeDef.GetFields()
+                        .Select(fieldHandle =>
+                    {
+                        var fieldDef = mdReader.GetFieldDefinition(fieldHandle);
+                        var fieldName = mdReader.GetString(fieldDef.Name);
+                        var fullName = $"\"{fieldName}\"";
+
+                        var item = new CompletionItem(
+                            displayText: fieldName,
+                            source: source,
+                            icon: icon,
+                            filters: ImmutableArray<CompletionFilter>.Empty,
+                            suffix: string.Empty,
+                            insertText: fullName,
+                            sortText: fullName,
+                            filterText: fullName,
+                            attributeIcons: ImmutableArray<ImageElement>.Empty);
+
+                        //TODO: Add property
+
+                        return item;
+                    })
+                        .ToImmutableArray();
+                }
+                else if (accessorType == AccessorType.Method)
+                {
+                    var typeDef = mdReader.GetTypeDefinition(match);
+                    var icon = new ImageElement(KnownMonikers.Method.ToImageId());
+
+                    return typeDef.GetMethods()
+                        .Select(methodHandle =>
+                        {
+                            var methodDef = mdReader.GetMethodDefinition(methodHandle);
+                            var methodName = mdReader.GetString(methodDef.Name);
+                            var fullName = $"\"{methodName}\"";
+
+                            var item = new CompletionItem(
+                                displayText: methodName,
+                                source: source,
+                                icon: icon,
+                                filters: ImmutableArray<CompletionFilter>.Empty,
+                                suffix: string.Empty,
+                                insertText: fullName,
+                                sortText: fullName,
+                                filterText: fullName,
+                                attributeIcons: ImmutableArray<ImageElement>.Empty);
+
+                            //TODO: Add property
+
+                            return item;
+                        })
+                        .ToImmutableArray();
+                }
+                else throw new InvalidOperationException();
+            }
+        }
+
+        private static string BuildFullName(MetadataReader reader, TypeDefinitionHandle handle)
+        {
+            var typeDef = reader.GetTypeDefinition(handle);
+            var name = reader.GetString(typeDef.Name);
+
+            var declaringHandle = typeDef.GetDeclaringType();
+            if (!declaringHandle.IsNil)
+            {
+                return BuildFullName(reader, declaringHandle) + "/" + name;
+            }
+
+            var ns = reader.GetString(typeDef.Namespace);
+            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
+        }
+
+        private static string BuildFullName(INamedTypeSymbol symbol)
+        {
+            var name = symbol.MetadataName;
+
+            if (symbol.ContainingType != null)
+            {
+                return BuildFullName(symbol.ContainingType) + "/" + name;
+            }
+
+            var cns = symbol.ContainingNamespace;
+            var ns = cns != null && !cns.IsGlobalNamespace
+                ? cns.ToDisplayString()
+                : null;
+
+
+            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
         }
     }
 }
