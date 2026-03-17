@@ -351,6 +351,9 @@ namespace MemberLens
                         {
                             var methodDef = mdReader.GetMethodDefinition(methodHandle);
                             var methodName = mdReader.GetString(methodDef.Name);
+
+                            if (methodName == ".ctor") return null;
+
                             var fullName = $"\"{methodName}\"";
 
                             var item = new CompletionItem(
@@ -368,6 +371,7 @@ namespace MemberLens
 
                             return item;
                         })
+                        .Where(item => item != null)
                         .ToImmutableArray();
                 }
                 else throw new InvalidOperationException();
