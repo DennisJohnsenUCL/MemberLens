@@ -118,8 +118,7 @@ namespace MemberLens
                         return fullName == sourceFullName;
                     });
 
-                //TODO: This probably does nothing. Find a better way.
-                if (match.IsNil) return null;
+                if (match.IsNil || match == default) return null;
 
                 var key = fullName + _accessorType.ToString();
 
