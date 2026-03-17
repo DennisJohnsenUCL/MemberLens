@@ -111,17 +111,24 @@ namespace MemberLens
                 //TODO: This probably does nothing. Find a better way.
                 if (match.IsNil) return null;
 
+                //TODO: Check for cached items
+
                 //TODO: Filter out explicit interfaces implementations -> .Contains(".")
 
+                ImmutableArray<CompletionItem> items;
                 if (_accessorType == AccessorType.Field)
                 {
-                    return GetFieldItems(match, mdReader);
+                    items = GetFieldItems(match, mdReader);
                 }
                 else if (_accessorType == AccessorType.Method)
                 {
-                    return GetMethodItems(match, mdReader);
+                    items = GetMethodItems(match, mdReader);
                 }
                 else throw new InvalidOperationException();
+
+                //TODO: Cache items
+
+                return items;
             }
         }
 
