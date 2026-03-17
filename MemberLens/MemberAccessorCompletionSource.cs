@@ -15,28 +15,28 @@ namespace MemberLens
 {
     internal class MemberAccessorCompletionSource : IAsyncCompletionSource
     {
-        //TODO: Empty field.
+        private readonly CompletionContext Empty = CompletionContext.Empty;
 
         public async Task<CompletionContext> GetCompletionContextAsync(IAsyncCompletionSession session, CompletionTrigger trigger, SnapshotPoint triggerLocation, SnapshotSpan applicableToSpan, CancellationToken token)
         {
             var symCtx = await GetSymbolContextAsync(triggerLocation, token);
-            if (symCtx == null) return CompletionContext.Empty;
+            if (symCtx == null) return Empty;
 
             var symbolAndAttribute = GetSymbolAndAttribute(symCtx.MethodSymbolInfo, symCtx.ArgumentIndex);
-            if (symbolAndAttribute == null) return CompletionContext.Empty;
+            if (symbolAndAttribute == null) return Empty;
             var (methodSymbol, memberAccessorAttribute) = symbolAndAttribute.Value;
 
             var constructorArgs = memberAccessorAttribute.ConstructorArguments;
-            if (constructorArgs.Length < 2) return CompletionContext.Empty;
+            if (constructorArgs.Length < 2) return Empty;
 
             var sourceType = GetSourceType(methodSymbol, constructorArgs);
-            if (sourceType == null) return CompletionContext.Empty;
+            if (sourceType == null) return Empty;
 
             var accessorType = (AccessorType)(int)constructorArgs[0].Value;
 
             var completionItemBuilder = new CompletionItemBuilder(sourceType, accessorType, this, symCtx.SemanticModel);
             var completionItems = completionItemBuilder.Build();
-            if (completionItems == null) return CompletionContext.Empty;
+            if (completionItems == null) return Empty;
 
             var completionContext = new CompletionContext(completionItems.Value);
             return completionContext;
