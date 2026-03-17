@@ -45,6 +45,8 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="CompletionItemBuilder.cs" />
+    <Compile Include="CompletionSymbolContext.cs" />
     <Compile Include="MemberAccessorCompletionSource.cs" />
     <Compile Include="MemberAccessorCompletionSourceProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

@@ -1,0 +1,239 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.IO;
+using System.Linq;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
+using MemberLens.Attributes;
+using Microsoft.CodeAnalysis;
+using Microsoft.VisualStudio.Core.Imaging;
+using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion.Data;
+using Microsoft.VisualStudio.Text.Adornments;
+
+namespace MemberLens
+{
+    internal class CompletionItemBuilder
+    {
+        private readonly INamedTypeSymbol _sourceType;
+        private readonly AccessorType _accessorType;
+        private readonly MemberAccessorCompletionSource _source;
+        private readonly SemanticModel _semanticModel;
+        private readonly ImageElement _icon;
+
+        public CompletionItemBuilder(
+            INamedTypeSymbol sourceType,
+            AccessorType accessorType,
+            MemberAccessorCompletionSource source,
+            SemanticModel semanticModel)
+        {
+            _sourceType = sourceType;
+            _accessorType = accessorType;
+            _source = source;
+            _semanticModel = semanticModel;
+
+            _icon = GetIcon();
+        }
+
+        public ImmutableArray<CompletionItem>? Build()
+        {
+            ImmutableArray<CompletionItem>? completionItems;
+            if (_sourceType.Locations[0].IsInSource)
+            {
+                completionItems = GetSourceCompletionItems();
+            }
+            else if (_sourceType.Locations[0].IsInMetadata)
+            {
+                completionItems = GetMetadataCompletionItems();
+            }
+            else return null;
+
+            return completionItems;
+        }
+
+        private ImmutableArray<CompletionItem>? GetSourceCompletionItems()
+        {
+            IEnumerable<ISymbol> sourceMembers;
+
+            if (_accessorType == AccessorType.Field)
+            {
+                sourceMembers = _sourceType.GetMembers().OfType<IFieldSymbol>().Select(x => (ISymbol)x);
+            }
+            else if (_accessorType == AccessorType.Method)
+            {
+                sourceMembers = _sourceType.GetMembers().OfType<IMethodSymbol>().Select(x => (ISymbol)x);
+            }
+            else return null;
+
+            var completionItems = sourceMembers
+                .Where(symbol => symbol.Name != ".ctor")
+                .Select(symbol =>
+                {
+                    var fullName = $"\"{symbol.Name}\"";
+
+                    var item = BuildCompletionItem(symbol.Name, fullName);
+
+                    item.Properties.AddProperty("symbol", symbol);
+
+                    return item;
+                })
+                .ToImmutableArray();
+
+            return completionItems;
+        }
+
+        private ImmutableArray<CompletionItem>? GetMetadataCompletionItems()
+        {
+            //TODO: Rebuild Nuget project, add generic source class, nested source class, test match
+
+            var compilation = _semanticModel.Compilation;
+
+            //TODO: Filter out sourceType.ContainingAssembly.Name.StartsWith("System., Microsoft.");
+
+            if (!(compilation.GetMetadataReference(
+                _sourceType.ContainingAssembly) is PortableExecutableReference reference)) return null;
+
+            var path = reference.FilePath;
+            if (path == null) return null;
+
+            using (var stream = File.OpenRead(path))
+            using (var peReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata))
+            {
+                var mdReader = peReader.GetMetadataReader();
+
+                var sourceFullName = BuildFullName(_sourceType);
+
+                var match = mdReader.TypeDefinitions
+                    .Where(h => mdReader.GetString(mdReader.GetTypeDefinition(h).Name) == _sourceType.MetadataName)
+                    .FirstOrDefault(td => BuildFullName(mdReader, td) == sourceFullName);
+
+                //TODO: This probably does nothing. Find a better way.
+                if (match.IsNil) return null;
+
+                //TODO: Filter out explicit interfaces implementations -> .Contains(".")
+
+                if (_accessorType == AccessorType.Field)
+                {
+                    return GetFieldItems(match, mdReader);
+                }
+                else if (_accessorType == AccessorType.Method)
+                {
+                    return GetMethodItems(match, mdReader);
+                }
+                else throw new InvalidOperationException();
+            }
+        }
+
+        private ImmutableArray<CompletionItem> GetFieldItems(TypeDefinitionHandle handle, MetadataReader reader)
+        {
+            var typeDef = reader.GetTypeDefinition(handle);
+
+            var fieldItems = typeDef.GetFields()
+                .Select(fieldHandle =>
+                {
+                    var fieldDef = reader.GetFieldDefinition(fieldHandle);
+                    var fieldName = reader.GetString(fieldDef.Name);
+                    var fullName = $"\"{fieldName}\"";
+
+                    var item = BuildCompletionItem(fieldName, fullName);
+
+                    //TODO: Add property
+
+                    return item;
+                })
+                .ToImmutableArray();
+
+            return fieldItems;
+        }
+
+        private ImmutableArray<CompletionItem> GetMethodItems(TypeDefinitionHandle handle, MetadataReader reader)
+        {
+            var typeDef = reader.GetTypeDefinition(handle);
+
+            return typeDef.GetMethods()
+                .Select(methodHandle =>
+                {
+                    var methodDef = reader.GetMethodDefinition(methodHandle);
+                    var methodName = reader.GetString(methodDef.Name);
+
+                    if (methodName == ".ctor") return null;
+
+                    var fullName = $"\"{methodName}\"";
+
+                    var item = BuildCompletionItem(methodName, fullName);
+
+                    //TODO: Add property
+
+                    return item;
+                })
+                .Where(item => item != null)
+                .ToImmutableArray();
+        }
+
+        private CompletionItem BuildCompletionItem(string displayName, string fullName)
+        {
+            return new CompletionItem(
+                displayText: displayName,
+                source: _source,
+                icon: _icon,
+                filters: ImmutableArray<CompletionFilter>.Empty,
+                suffix: string.Empty,
+                insertText: fullName,
+                sortText: fullName,
+                filterText: fullName,
+                attributeIcons: ImmutableArray<ImageElement>.Empty);
+        }
+
+        private ImageElement GetIcon()
+        {
+            ImageElement icon;
+            switch (_accessorType)
+            {
+                case AccessorType.Field:
+                    icon = new ImageElement(KnownMonikers.Field.ToImageId());
+                    break;
+                case AccessorType.Method:
+                    icon = new ImageElement(KnownMonikers.Method.ToImageId());
+                    break;
+                default:
+                    throw new InvalidOperationException();
+            }
+
+            return icon;
+        }
+
+        private static string BuildFullName(MetadataReader reader, TypeDefinitionHandle handle)
+        {
+            var typeDef = reader.GetTypeDefinition(handle);
+            var name = reader.GetString(typeDef.Name);
+
+            var declaringHandle = typeDef.GetDeclaringType();
+            if (!declaringHandle.IsNil)
+            {
+                return BuildFullName(reader, declaringHandle) + "/" + name;
+            }
+
+            var ns = reader.GetString(typeDef.Namespace);
+            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
+        }
+
+        private static string BuildFullName(INamedTypeSymbol symbol)
+        {
+            var name = symbol.MetadataName;
+
+            if (symbol.ContainingType != null)
+            {
+                return BuildFullName(symbol.ContainingType) + "/" + name;
+            }
+
+            var cns = symbol.ContainingNamespace;
+            var ns = cns != null && !cns.IsGlobalNamespace
+                ? cns.ToDisplayString()
+                : null;
+
+
+            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
+        }
+    }
+}
