@@ -16,6 +16,8 @@ namespace MemberLens
 {
     internal class CompletionItemBuilder
     {
+        private readonly static Dictionary<string, ImmutableArray<CompletionItem>> _itemCache = new Dictionary<string, ImmutableArray<CompletionItem>>();
+
         private readonly INamedTypeSymbol _sourceType;
         private readonly AccessorType _accessorType;
         private readonly MemberAccessorCompletionSource _source;
@@ -89,10 +91,13 @@ namespace MemberLens
 
             var compilation = _semanticModel.Compilation;
 
-            //TODO: Filter out sourceType.ContainingAssembly.Name.StartsWith("System., Microsoft.");
+            var assembly = _sourceType.ContainingAssembly;
 
             if (!(compilation.GetMetadataReference(
-                _sourceType.ContainingAssembly) is PortableExecutableReference reference)) return null;
+                assembly) is PortableExecutableReference reference)) return null;
+
+            var assemblyName = assembly.Name;
+            if (assemblyName.StartsWith("System.") || assemblyName.StartsWith("Microsoft.")) return null;
 
             var path = reference.FilePath;
             if (path == null) return null;
@@ -104,14 +109,22 @@ namespace MemberLens
 
                 var sourceFullName = BuildFullName(_sourceType);
 
+                var fullName = string.Empty;
                 var match = mdReader.TypeDefinitions
-                    .Where(h => mdReader.GetString(mdReader.GetTypeDefinition(h).Name) == _sourceType.MetadataName)
-                    .FirstOrDefault(td => BuildFullName(mdReader, td) == sourceFullName);
+                    .Where(tdh => mdReader.GetString(mdReader.GetTypeDefinition(tdh).Name) == _sourceType.MetadataName)
+                    .FirstOrDefault(tdh =>
+                    {
+                        fullName = BuildFullName(mdReader, tdh);
+                        return fullName == sourceFullName;
+                    });
 
                 //TODO: This probably does nothing. Find a better way.
                 if (match.IsNil) return null;
 
-                //TODO: Check for cached items
+                var key = fullName + _accessorType.ToString();
+
+                if (_itemCache.TryGetValue(key, out var cachedItems))
+                    return cachedItems;
 
                 //TODO: Filter out explicit interfaces implementations -> .Contains(".")
 
@@ -126,7 +139,7 @@ namespace MemberLens
                 }
                 else throw new InvalidOperationException();
 
-                //TODO: Cache items
+                _itemCache.Add(key, items);
 
                 return items;
             }
