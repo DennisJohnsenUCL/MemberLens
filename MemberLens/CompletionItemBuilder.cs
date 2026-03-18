@@ -86,9 +86,11 @@ namespace MemberLens
         private ImmutableArray<CompletionItem>? GetMetadataCompletionItems()
         {
             //TODO: Rebuild Nuget project, add generic source class, nested source class, test match
-            //TODO: Add more members: properties getter/setter, generic members, readonly field
+            //TODO: Add more members: generic members, classes as parameters, class return types type parameters ,readonly field
+            //TODO: Add more members: properties getter/setter
             //TODO: Test how inheritance works: protected fields, public methods, public properties
             //TODO: Interfaces: Implicit, explicit, inherited
+            //TODO: open generic source type
 
             var compilation = _semanticModel.Compilation;
 

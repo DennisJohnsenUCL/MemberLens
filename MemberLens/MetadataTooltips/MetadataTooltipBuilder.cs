@@ -1,5 +1,5 @@
 ﻿using System.Collections.Generic;
-using System.Linq;
+using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.Language.StandardClassification;
 using Microsoft.VisualStudio.Text.Adornments;
 
@@ -20,9 +20,18 @@ namespace MemberLens
                     "(field) "));
             }
 
-            runs.AddRange(info.SignatureParts.Select(part => new ClassifiedTextRun(
-                ClassificationHelper.ConvertClassification(part.Kind),
-                part.Text)));
+            foreach (var part in info.SignatureParts)
+            {
+                // Type-classified parts may contain embedded keywords
+                // inside generic types, e.g. "Dictionary<string, int>".
+                // Split them into properly classified runs.
+                if (part.Kind == SymbolDisplayPartKind.ClassName)
+                    AddClassifiedTypeRuns(runs, part.Text);
+                else
+                    runs.Add(new ClassifiedTextRun(
+                        ClassificationHelper.ConvertClassification(part.Kind),
+                        part.Text));
+            }
 
             elements.Add(new ClassifiedTextElement(runs));
 
@@ -37,6 +46,58 @@ namespace MemberLens
             return new ContainerElement(
                 ContainerElementStyle.Stacked,
                 elements);
+        }
+
+        /// <summary>
+        /// Tokenizes a type string like "Dictionary<string, int>" into
+        /// classified runs: type names get Type classification, C# keywords
+        /// like "int" get Keyword, and punctuation (&lt; &gt; , [] ? *) gets
+        /// Punctuation.
+        /// </summary>
+        private static void AddClassifiedTypeRuns(List<ClassifiedTextRun> runs, string text)
+        {
+            int i = 0;
+            while (i < text.Length)
+            {
+                char c = text[i];
+
+                if (c == '<' || c == '>' || c == ',' || c == '[' || c == ']'
+                    || c == '?' || c == '*')
+                {
+                    runs.Add(new ClassifiedTextRun(
+                        PredefinedClassificationTypeNames.Punctuation,
+                        c.ToString()));
+                    i++;
+                }
+                else if (c == ' ')
+                {
+                    runs.Add(new ClassifiedTextRun(
+                        PredefinedClassificationTypeNames.WhiteSpace,
+                        " "));
+                    i++;
+                }
+                else
+                {
+                    // Read an identifier token
+                    int start = i;
+                    while (i < text.Length && text[i] != '<' && text[i] != '>'
+                        && text[i] != ',' && text[i] != ' ' && text[i] != '['
+                        && text[i] != ']' && text[i] != '?' && text[i] != '*')
+                    {
+                        i++;
+                    }
+
+                    var token = text.Substring(start, i - start);
+
+                    //TODO: Move to helper
+                    runs.Add(MemberDefinitionInfoFactory.IsCSharpTypeKeyword(token)
+                        ? new ClassifiedTextRun(
+                            PredefinedClassificationTypeNames.Keyword, token)
+                        : new ClassifiedTextRun(
+                            ClassificationHelper.ConvertClassification(SymbolDisplayPartKind.ClassName),
+                            token));
+                }
+            }
         }
     }
 }

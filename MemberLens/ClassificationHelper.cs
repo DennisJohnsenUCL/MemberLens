@@ -20,7 +20,6 @@ namespace MemberLens
                 case SymbolDisplayPartKind.InterfaceName:
                 case SymbolDisplayPartKind.EnumName:
                 case SymbolDisplayPartKind.DelegateName:
-                case SymbolDisplayPartKind.TypeParameterName:
                     return PredefinedClassificationTypeNames.Type;
 
                 case SymbolDisplayPartKind.Punctuation:
@@ -41,6 +40,9 @@ namespace MemberLens
 
                 case SymbolDisplayPartKind.PropertyName:
                     return ClassificationTypeNames.PropertyName;
+
+                case SymbolDisplayPartKind.TypeParameterName:
+                    return ClassificationTypeNames.TypeParameterName;
 
                 default:
                     return PredefinedClassificationTypeNames.Identifier;

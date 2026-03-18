@@ -46,7 +46,7 @@ namespace MemberLens
                         info.SignatureParts.Add(DisplayPart.Punctuation(","));
                         info.SignatureParts.Add(DisplayPart.Space());
                     }
-                    info.SignatureParts.Add(DisplayPart.Type(context.TypeParameters[i]));
+                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.TypeParameters[i]));
                 }
                 info.SignatureParts.Add(DisplayPart.Punctuation(">"));
             }
@@ -67,7 +67,7 @@ namespace MemberLens
                         info.SignatureParts.Add(DisplayPart.Punctuation(","));
                         info.SignatureParts.Add(DisplayPart.Space());
                     }
-                    info.SignatureParts.Add(DisplayPart.Type(context.MethodParameters[i]));
+                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.MethodParameters[i]));
                 }
                 info.SignatureParts.Add(DisplayPart.Punctuation(">"));
             }
@@ -146,7 +146,24 @@ namespace MemberLens
                 ? DisplayPart.Keyword(fieldType)
                 : DisplayPart.Type(fieldType));
             info.SignatureParts.Add(DisplayPart.Space());
+
+            // Declaring type (with generic params if any)
             info.SignatureParts.Add(DisplayPart.Type(declaringTypeName));
+            if (context.TypeParameters.Length > 0)
+            {
+                info.SignatureParts.Add(DisplayPart.Punctuation("<"));
+                for (int i = 0; i < context.TypeParameters.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        info.SignatureParts.Add(DisplayPart.Punctuation(","));
+                        info.SignatureParts.Add(DisplayPart.Space());
+                    }
+                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.TypeParameters[i]));
+                }
+                info.SignatureParts.Add(DisplayPart.Punctuation(">"));
+            }
+
             info.SignatureParts.Add(DisplayPart.Punctuation("."));
             info.SignatureParts.Add(DisplayPart.FieldName(fieldName));
 
@@ -202,7 +219,7 @@ namespace MemberLens
                         info.SignatureParts.Add(DisplayPart.Punctuation(","));
                         info.SignatureParts.Add(DisplayPart.Space());
                     }
-                    info.SignatureParts.Add(DisplayPart.Type(context.TypeParameters[i]));
+                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.TypeParameters[i]));
                 }
                 info.SignatureParts.Add(DisplayPart.Punctuation(">"));
             }
@@ -238,7 +255,7 @@ namespace MemberLens
         /// Checks whether the type string is a C# keyword like int, string, etc.
         /// so we can classify it as Keyword rather than Type in the tooltip.
         /// </summary>
-        private static bool IsCSharpTypeKeyword(string typeName)
+        internal static bool IsCSharpTypeKeyword(string typeName)
         {
             switch (typeName)
             {

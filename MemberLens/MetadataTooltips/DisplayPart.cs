@@ -44,5 +44,8 @@ namespace MemberLens
 
         public static DisplayPart FieldName(string text) =>
             new DisplayPart(SymbolDisplayPartKind.FieldName, text);
+
+        public static DisplayPart TypeParameterName(string text) =>
+            new DisplayPart(SymbolDisplayPartKind.TypeParameterName, text);
     }
 }
