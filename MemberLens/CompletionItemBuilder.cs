@@ -85,11 +85,10 @@ namespace MemberLens
 
         private ImmutableArray<CompletionItem>? GetMetadataCompletionItems()
         {
-            //TODO: Rebuild Nuget project, add generic source class, nested source class, test match
+            //TODO: nested source class
             //TODO: Add more members: properties getter/setter
             //TODO: Test how inheritance works: protected fields, public methods, public properties
             //TODO: Interfaces: Implicit, explicit, inherited
-            //TODO: open generic source type
 
             var compilation = _semanticModel.Compilation;
 
@@ -125,7 +124,7 @@ namespace MemberLens
                 var key = matchFullName + _accessorType.ToString();
 
                 if (_itemCache.TryGetValue(key, out var cachedItems))
-                    return cachedItems;
+                    return RebuildCachedItems(cachedItems);
 
                 //TODO: Filter out explicit interfaces implementations -> .Contains(".")
 
@@ -140,7 +139,8 @@ namespace MemberLens
                 }
                 else throw new InvalidOperationException();
 
-                _itemCache.Add(key, items);
+                if (!_itemCache.ContainsKey(key))
+                    _itemCache.Add(key, items);
 
                 return items;
             }
@@ -254,6 +254,28 @@ namespace MemberLens
 
 
             return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
+        }
+
+        private static ImmutableArray<CompletionItem> RebuildCachedItems(ImmutableArray<CompletionItem> cachedItems)
+        {
+            return cachedItems.Select(item =>
+            {
+                var refreshedItem = new CompletionItem(
+                    displayText: item.DisplayText,
+                    source: item.Source,
+                    icon: item.Icon,
+                    filters: item.Filters,
+                    suffix: item.Suffix,
+                    insertText: item.InsertText,
+                    sortText: item.SortText,
+                    filterText: item.FilterText,
+                    attributeIcons: ImmutableArray<ImageElement>.Empty);
+
+                var memberDef = item.Properties.GetProperty("memberDef");
+                refreshedItem.Properties.AddProperty("memberDef", memberDef);
+
+                return refreshedItem;
+            }).ToImmutableArray();
         }
     }
 }
