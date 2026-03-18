@@ -47,6 +47,7 @@
   <ItemGroup>
     <Compile Include="ClassificationHelper.cs" />
     <Compile Include="CompletionItemBuilder.cs" />
+    <Compile Include="CompletionSourceHelper.cs" />
     <Compile Include="CompletionSymbolContext.cs" />
     <Compile Include="MemberAccessorCompletionSource.cs" />
     <Compile Include="MemberAccessorCompletionSourceProvider.cs" />
