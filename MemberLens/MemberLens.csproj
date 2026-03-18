@@ -49,6 +49,13 @@
     <Compile Include="CompletionSymbolContext.cs" />
     <Compile Include="MemberAccessorCompletionSource.cs" />
     <Compile Include="MemberAccessorCompletionSourceProvider.cs" />
+    <Compile Include="MetadataTooltips\DisplayPart.cs" />
+    <Compile Include="MetadataTooltips\GenericContext.cs" />
+    <Compile Include="MetadataTooltips\MemberDefinitionInfo.cs" />
+    <Compile Include="MetadataTooltips\MemberDefinitionInfoFactory.cs" />
+    <Compile Include="MetadataTooltips\MemberKind.cs" />
+    <Compile Include="MetadataTooltips\MetadataTooltipBuilder.cs" />
+    <Compile Include="MetadataTooltips\SignatureTypeProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="MemberLensPackage.cs" />
     <Compile Include="SymbolTooltipBuilder.cs" />

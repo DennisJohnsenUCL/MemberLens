@@ -34,8 +34,7 @@ namespace MemberLens
 
             var accessorType = (AccessorType)(int)constructorArgs[0].Value;
 
-            var completionItemBuilder = new CompletionItemBuilder(sourceType, accessorType, this, symCtx.SemanticModel);
-            var completionItems = completionItemBuilder.Build();
+            var completionItems = new CompletionItemBuilder(sourceType, accessorType, this, symCtx.SemanticModel).Build();
             if (completionItems == null) return Empty;
 
             var completionContext = new CompletionContext(completionItems.Value);
@@ -44,10 +43,13 @@ namespace MemberLens
 
         public async Task<object> GetDescriptionAsync(IAsyncCompletionSession session, CompletionItem item, CancellationToken token)
         {
-            if (!(item.Properties.GetProperty("symbol") is ISymbol symbol))
-                return Task.FromResult<object>(string.Empty);
+            if (item.Properties.TryGetProperty("symbol", out ISymbol symbol))
+                return SymbolTooltipBuilder.Build(symbol, token);
 
-            return SymbolTooltipBuilder.Build(symbol, token);
+            if (item.Properties.TryGetProperty("memberDef", out MemberDefinitionInfo memberDef))
+                return MetadataTooltipBuilder.Build(memberDef);
+
+            return string.Empty;
         }
 
         public CompletionStartData InitializeCompletion(CompletionTrigger trigger, SnapshotPoint triggerLocation, CancellationToken token)
@@ -71,6 +73,7 @@ namespace MemberLens
             return new CompletionStartData(CompletionParticipation.ProvidesItems, new SnapshotSpan(snapshot, position, 0));
         }
 
+        //TODO: Move this and below to other static class
         private static async Task<CompletionSymbolContext> GetSymbolContextAsync(SnapshotPoint triggerLocation, CancellationToken token = default)
         {
             var doc = triggerLocation.Snapshot.GetOpenDocumentInCurrentContextWithChanges();

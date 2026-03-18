@@ -72,9 +72,7 @@ namespace MemberLens
                 .Where(symbol => symbol.Name != ".ctor")
                 .Select(symbol =>
                 {
-                    var fullName = $"\"{symbol.Name}\"";
-
-                    var item = BuildCompletionItem(symbol.Name, fullName);
+                    var item = BuildCompletionItem(symbol.Name);
 
                     item.Properties.AddProperty("symbol", symbol);
 
@@ -88,6 +86,9 @@ namespace MemberLens
         private ImmutableArray<CompletionItem>? GetMetadataCompletionItems()
         {
             //TODO: Rebuild Nuget project, add generic source class, nested source class, test match
+            //TODO: Add more members: properties getter/setter, generic members, readonly field
+            //TODO: Test how inheritance works: protected fields, public methods, public properties
+            //TODO: Interfaces: Implicit, explicit, inherited
 
             var compilation = _semanticModel.Compilation;
 
@@ -109,18 +110,18 @@ namespace MemberLens
 
                 var sourceFullName = BuildFullName(_sourceType);
 
-                var fullName = string.Empty;
+                var matchFullName = string.Empty;
                 var match = mdReader.TypeDefinitions
                     .Where(tdh => mdReader.GetString(mdReader.GetTypeDefinition(tdh).Name) == _sourceType.MetadataName)
                     .FirstOrDefault(tdh =>
                     {
-                        fullName = BuildFullName(mdReader, tdh);
-                        return fullName == sourceFullName;
+                        matchFullName = BuildFullName(mdReader, tdh);
+                        return matchFullName == sourceFullName;
                     });
 
                 if (match.IsNil || match == default) return null;
 
-                var key = fullName + _accessorType.ToString();
+                var key = matchFullName + _accessorType.ToString();
 
                 if (_itemCache.TryGetValue(key, out var cachedItems))
                     return cachedItems;
@@ -153,11 +154,10 @@ namespace MemberLens
                 {
                     var fieldDef = reader.GetFieldDefinition(fieldHandle);
                     var fieldName = reader.GetString(fieldDef.Name);
-                    var fullName = $"\"{fieldName}\"";
 
-                    var item = BuildCompletionItem(fieldName, fullName);
+                    var item = BuildCompletionItem(fieldName);
 
-                    //TODO: Add property
+                    item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromField(reader, fieldHandle));
 
                     return item;
                 })
@@ -178,11 +178,9 @@ namespace MemberLens
 
                     if (methodName == ".ctor") return null;
 
-                    var fullName = $"\"{methodName}\"";
+                    var item = BuildCompletionItem(methodName);
 
-                    var item = BuildCompletionItem(methodName, fullName);
-
-                    //TODO: Add property
+                    item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromMethod(reader, methodHandle));
 
                     return item;
                 })
@@ -190,8 +188,10 @@ namespace MemberLens
                 .ToImmutableArray();
         }
 
-        private CompletionItem BuildCompletionItem(string displayName, string fullName)
+        private CompletionItem BuildCompletionItem(string displayName)
         {
+            var fullName = $"\"{displayName}\"";
+
             return new CompletionItem(
                 displayText: displayName,
                 source: _source,

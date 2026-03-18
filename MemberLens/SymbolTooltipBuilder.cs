@@ -63,7 +63,8 @@ namespace MemberLens
                 elements);
         }
 
-        private static string ConvertClassification(SymbolDisplayPartKind kind)
+        //TODO: Do something else with this
+        internal static string ConvertClassification(SymbolDisplayPartKind kind)
         {
             switch (kind)
             {
