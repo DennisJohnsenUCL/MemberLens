@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Collections.Generic;
+using System.Reflection;
 using System.Reflection.Metadata;
 
 namespace MemberLens
@@ -27,6 +28,13 @@ namespace MemberLens
             var context = GenericContext.Create(reader, declaringTypeHandle, methodHandle);
             var provider = new SignatureTypeProvider(reader);
             var sig = methodDef.DecodeSignature(provider, context);
+
+            var typeParamNames = new HashSet<string>();
+            foreach (var tp in context.TypeParameters)
+                typeParamNames.Add(tp);
+            foreach (var mp in context.MethodParameters) // only in FromMethod
+                typeParamNames.Add(mp);
+            info.TypeParameterNames = typeParamNames;
 
             // Modifiers
             var methodAttrs = methodDef.Attributes;
@@ -161,6 +169,13 @@ namespace MemberLens
             var provider = new SignatureTypeProvider(reader);
             var fieldType = fieldDef.DecodeSignature(provider, context);
 
+            var typeParamNames = new HashSet<string>();
+            foreach (var tp in context.TypeParameters)
+                typeParamNames.Add(tp);
+            foreach (var mp in context.MethodParameters) // only in FromMethod
+                typeParamNames.Add(mp);
+            info.TypeParameterNames = typeParamNames;
+
             // Modifiers
             var fieldAttrs = fieldDef.Attributes;
 
@@ -233,6 +248,13 @@ namespace MemberLens
             var context = GenericContext.Create(reader, declaringTypeHandle);
             var provider = new SignatureTypeProvider(reader);
             var sig = propertyDef.DecodeSignature(provider, context);
+
+            var typeParamNames = new HashSet<string>();
+            foreach (var tp in context.TypeParameters)
+                typeParamNames.Add(tp);
+            foreach (var mp in context.MethodParameters) // only in FromMethod
+                typeParamNames.Add(mp);
+            info.TypeParameterNames = typeParamNames;
 
             // Modifiers — derived from the accessor method attributes
             var accessorAttrs = accessorDef.Attributes;

@@ -20,5 +20,7 @@ namespace MemberLens
         /// The XML doc summary text, if any.
         /// </summary>
         public string SummaryText { get; set; }
+
+        public HashSet<string> TypeParameterNames { get; set; }
     }
 }

@@ -26,7 +26,7 @@ namespace MemberLens
                 // inside generic types, e.g. "Dictionary<string, int>".
                 // Split them into properly classified runs.
                 if (part.Kind == SymbolDisplayPartKind.ClassName)
-                    AddClassifiedTypeRuns(runs, part.Text);
+                    AddClassifiedTypeRuns(runs, part.Text, info.TypeParameterNames);
                 else
                     runs.Add(new ClassifiedTextRun(
                         ClassificationHelper.ConvertClassification(part.Kind),
@@ -51,10 +51,11 @@ namespace MemberLens
         /// <summary>
         /// Tokenizes a type string like "Dictionary<string, int>" into
         /// classified runs: type names get Type classification, C# keywords
-        /// like "int" get Keyword, and punctuation (&lt; &gt; , [] ? *) gets
-        /// Punctuation.
+        /// like "int" get Keyword, type parameters like "T" get TypeParameterName,
+        /// and punctuation (&lt; &gt; , [] ? *) gets Punctuation.
         /// </summary>
-        private static void AddClassifiedTypeRuns(List<ClassifiedTextRun> runs, string text)
+        private static void AddClassifiedTypeRuns(
+            List<ClassifiedTextRun> runs, string text, HashSet<string> typeParameterNames)
         {
             int i = 0;
             while (i < text.Length)
@@ -95,12 +96,17 @@ namespace MemberLens
                     if (lastDot >= 0)
                         token = token.Substring(lastDot + 1);
 
-                    runs.Add(MemberDefinitionInfoFactory.IsCSharpTypeKeyword(token)
-                        ? new ClassifiedTextRun(
-                            PredefinedClassificationTypeNames.Keyword, token)
-                        : new ClassifiedTextRun(
-                            ClassificationHelper.ConvertClassification(SymbolDisplayPartKind.ClassName),
-                            token));
+                    if (MemberDefinitionInfoFactory.IsCSharpTypeKeyword(token))
+                        runs.Add(new ClassifiedTextRun(
+                            PredefinedClassificationTypeNames.Keyword, token));
+                    else if (typeParameterNames != null && typeParameterNames.Contains(token))
+                        runs.Add(new ClassifiedTextRun(
+                            ClassificationHelper.ConvertClassification(
+                                SymbolDisplayPartKind.TypeParameterName), token));
+                    else
+                        runs.Add(new ClassifiedTextRun(
+                            ClassificationHelper.ConvertClassification(
+                                SymbolDisplayPartKind.ClassName), token));
                 }
             }
         }
