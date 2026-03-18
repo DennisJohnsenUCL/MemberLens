@@ -21,7 +21,7 @@ namespace MemberLens
             }
 
             runs.AddRange(info.SignatureParts.Select(part => new ClassifiedTextRun(
-                SymbolTooltipBuilder.ConvertClassification(part.Kind),
+                ClassificationHelper.ConvertClassification(part.Kind),
                 part.Text)));
 
             elements.Add(new ClassifiedTextElement(runs));

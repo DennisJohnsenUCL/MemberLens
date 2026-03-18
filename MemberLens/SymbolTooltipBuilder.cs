@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.Classification;
 using Microsoft.VisualStudio.Language.StandardClassification;
 using Microsoft.VisualStudio.Text.Adornments;
 
@@ -42,7 +41,7 @@ namespace MemberLens
             }
 
             runs.AddRange(signatureParts.Select(part => new ClassifiedTextRun(
-                ConvertClassification(part.Kind),
+                ClassificationHelper.ConvertClassification(part.Kind),
                 part.ToString())));
 
             elements.Add(new ClassifiedTextElement(runs));
@@ -61,48 +60,6 @@ namespace MemberLens
             return new ContainerElement(
                 ContainerElementStyle.Stacked,
                 elements);
-        }
-
-        //TODO: Do something else with this
-        internal static string ConvertClassification(SymbolDisplayPartKind kind)
-        {
-            switch (kind)
-            {
-                case SymbolDisplayPartKind.Keyword:
-                    return PredefinedClassificationTypeNames.Keyword;
-
-                case SymbolDisplayPartKind.ClassName:
-                case SymbolDisplayPartKind.RecordClassName:
-                case SymbolDisplayPartKind.StructName:
-                case SymbolDisplayPartKind.RecordStructName:
-                case SymbolDisplayPartKind.InterfaceName:
-                case SymbolDisplayPartKind.EnumName:
-                case SymbolDisplayPartKind.DelegateName:
-                case SymbolDisplayPartKind.TypeParameterName:
-                    return PredefinedClassificationTypeNames.Type;
-
-                case SymbolDisplayPartKind.Punctuation:
-                    return PredefinedClassificationTypeNames.Punctuation;
-
-                case SymbolDisplayPartKind.Space:
-                case SymbolDisplayPartKind.LineBreak:
-                    return PredefinedClassificationTypeNames.WhiteSpace;
-
-                case SymbolDisplayPartKind.Text:
-                    return PredefinedClassificationTypeNames.Text;
-
-                case SymbolDisplayPartKind.MethodName:
-                    return ClassificationTypeNames.MethodName;
-
-                case SymbolDisplayPartKind.ParameterName:
-                    return ClassificationTypeNames.ParameterName;
-
-                case SymbolDisplayPartKind.PropertyName:
-                    return ClassificationTypeNames.PropertyName;
-
-                default:
-                    return PredefinedClassificationTypeNames.Identifier;
-            }
         }
 
         private static string ExtractSummary(string xml)
