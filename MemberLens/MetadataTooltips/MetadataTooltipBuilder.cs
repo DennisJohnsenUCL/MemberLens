@@ -89,7 +89,12 @@ namespace MemberLens
 
                     var token = text.Substring(start, i - start);
 
-                    //TODO: Move to helper
+                    // Strip namespace prefix (e.g. "System.Collections.Generic.Dictionary" → "Dictionary")
+                    // Dots are part of the token since they aren't break characters.
+                    var lastDot = token.LastIndexOf('.');
+                    if (lastDot >= 0)
+                        token = token.Substring(lastDot + 1);
+
                     runs.Add(MemberDefinitionInfoFactory.IsCSharpTypeKeyword(token)
                         ? new ClassifiedTextRun(
                             PredefinedClassificationTypeNames.Keyword, token)

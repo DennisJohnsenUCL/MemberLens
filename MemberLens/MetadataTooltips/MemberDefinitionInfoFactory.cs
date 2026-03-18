@@ -1,4 +1,5 @@
-﻿using System.Reflection.Metadata;
+﻿using System.Reflection;
+using System.Reflection.Metadata;
 
 namespace MemberLens
 {
@@ -26,6 +27,25 @@ namespace MemberLens
             var context = GenericContext.Create(reader, declaringTypeHandle, methodHandle);
             var provider = new SignatureTypeProvider(reader);
             var sig = methodDef.DecodeSignature(provider, context);
+
+            // Modifiers
+            var methodAttrs = methodDef.Attributes;
+
+            if ((methodAttrs & MethodAttributes.Static) != 0)
+                AddKeyword(info, "static");
+
+            if ((methodAttrs & MethodAttributes.Abstract) != 0)
+                AddKeyword(info, "abstract");
+            else if ((methodAttrs & MethodAttributes.Final) != 0
+                     && (methodAttrs & MethodAttributes.Virtual) != 0
+                     && (methodAttrs & MethodAttributes.NewSlot) == 0)
+                AddKeyword(info, "sealed override");
+            else if ((methodAttrs & MethodAttributes.Virtual) != 0
+                     && (methodAttrs & MethodAttributes.NewSlot) != 0)
+                AddKeyword(info, "virtual");
+            else if ((methodAttrs & MethodAttributes.Virtual) != 0
+                     && (methodAttrs & MethodAttributes.NewSlot) == 0)
+                AddKeyword(info, "override");
 
             // Return type — classify as keyword if it's a C# type keyword
             var returnType = sig.ReturnType;
@@ -141,6 +161,20 @@ namespace MemberLens
             var provider = new SignatureTypeProvider(reader);
             var fieldType = fieldDef.DecodeSignature(provider, context);
 
+            // Modifiers
+            var fieldAttrs = fieldDef.Attributes;
+
+            if ((fieldAttrs & FieldAttributes.Literal) != 0)
+                AddKeyword(info, "const");
+            else
+            {
+                if ((fieldAttrs & FieldAttributes.Static) != 0)
+                    AddKeyword(info, "static");
+
+                if ((fieldAttrs & FieldAttributes.InitOnly) != 0)
+                    AddKeyword(info, "readonly");
+            }
+
             // FieldType DeclaringType.FieldName
             info.SignatureParts.Add(IsCSharpTypeKeyword(fieldType)
                 ? DisplayPart.Keyword(fieldType)
@@ -200,6 +234,25 @@ namespace MemberLens
             var provider = new SignatureTypeProvider(reader);
             var sig = propertyDef.DecodeSignature(provider, context);
 
+            // Modifiers — derived from the accessor method attributes
+            var accessorAttrs = accessorDef.Attributes;
+
+            if ((accessorAttrs & MethodAttributes.Static) != 0)
+                AddKeyword(info, "static");
+
+            if ((accessorAttrs & MethodAttributes.Abstract) != 0)
+                AddKeyword(info, "abstract");
+            else if ((accessorAttrs & MethodAttributes.Final) != 0
+                     && (accessorAttrs & MethodAttributes.Virtual) != 0
+                     && (accessorAttrs & MethodAttributes.NewSlot) == 0)
+                AddKeyword(info, "sealed override");
+            else if ((accessorAttrs & MethodAttributes.Virtual) != 0
+                     && (accessorAttrs & MethodAttributes.NewSlot) != 0)
+                AddKeyword(info, "virtual");
+            else if ((accessorAttrs & MethodAttributes.Virtual) != 0
+                     && (accessorAttrs & MethodAttributes.NewSlot) == 0)
+                AddKeyword(info, "override");
+
             // PropertyType DeclaringType.PropertyName { get; set; }
             var propertyType = sig.ReturnType;
             info.SignatureParts.Add(IsCSharpTypeKeyword(propertyType)
@@ -249,6 +302,15 @@ namespace MemberLens
             info.SignatureParts.Add(DisplayPart.Punctuation("}"));
 
             return info;
+        }
+
+        /// <summary>
+        /// Appends a keyword and trailing space to the signature parts.
+        /// </summary>
+        private static void AddKeyword(MemberDefinitionInfo info, string keyword)
+        {
+            info.SignatureParts.Add(DisplayPart.Keyword(keyword));
+            info.SignatureParts.Add(DisplayPart.Space());
         }
 
         /// <summary>
