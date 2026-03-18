@@ -96,6 +96,8 @@ namespace MemberLens
             }
             else return null;
 
+            if (sourceType.IsUnboundGenericType) sourceType = sourceType.OriginalDefinition;
+
             return sourceType;
         }
 
