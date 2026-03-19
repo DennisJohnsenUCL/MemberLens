@@ -216,7 +216,54 @@ namespace MemberLens
         {
             var typeDef = reader.GetTypeDefinition(handle);
 
-            return typeDef.GetMethods()
+            var methodItems = typeDef.GetMethods().ToList();
+
+            TypeDefinition? current = typeDef;
+            while (true)
+            {
+                var entity = current.Value.BaseType;
+                if (entity.IsNil || entity == null || entity == default) break;
+
+                if (entity.Kind == HandleKind.TypeSpecification)
+                {
+                    var typeSpecHandle = (TypeSpecificationHandle)entity;
+                    var typeSpec = reader.GetTypeSpecification(typeSpecHandle);
+
+                    var blobReader = reader.GetBlobReader(typeSpec.Signature);
+                    var signatureTypeCode = blobReader.ReadSignatureTypeCode();
+
+                    if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
+                    {
+                        var typeCode = blobReader.ReadSignatureTypeCode();
+                        var typeHandle = blobReader.ReadTypeHandle();
+
+                        if (typeHandle == null || typeHandle.IsNil || typeHandle == default) break;
+
+                        entity = typeHandle;
+                    }
+                    else break;
+                }
+
+                if (entity.Kind == HandleKind.TypeDefinition)
+                {
+                    var asmTypeDefHandle = (TypeDefinitionHandle)entity;
+                    var asmTypeDef = reader.GetTypeDefinition(asmTypeDefHandle);
+                    var asmTypeMethods = asmTypeDef.GetMethods().Where(x =>
+                    {
+                        var method = reader.GetMethodDefinition(x);
+                        var access = method.Attributes & MethodAttributes.MemberAccessMask;
+
+                        return access != MethodAttributes.Private && access != MethodAttributes.PrivateScope;
+                    });
+                    methodItems = methodItems.Concat(asmTypeMethods).ToList();
+
+                    current = asmTypeDef;
+                }
+                //TODO: Else if Kind == TypeReference
+                else break;
+            }
+
+            var completionItems = methodItems
                 .Select(methodHandle =>
                 {
                     var methodDef = reader.GetMethodDefinition(methodHandle);
@@ -232,6 +279,8 @@ namespace MemberLens
                 })
                 .Where(item => item != null)
                 .ToImmutableArray();
+
+            return completionItems;
         }
 
         private CompletionItem BuildCompletionItem(string displayName)
