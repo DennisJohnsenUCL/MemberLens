@@ -146,21 +146,70 @@ namespace MemberLens
         {
             var typeDef = reader.GetTypeDefinition(handle);
 
-            var fieldItems = typeDef.GetFields()
-                .Select(fieldHandle =>
+            var fieldItems = typeDef.GetFields().ToList();
+
+            TypeDefinition? current = typeDef;
+            while (true)
+            {
+                var entity = current.Value.BaseType;
+                if (entity.IsNil || entity == null || entity == default) break;
+
+                if (entity.Kind == HandleKind.TypeSpecification)
                 {
-                    var fieldDef = reader.GetFieldDefinition(fieldHandle);
-                    var fieldName = reader.GetString(fieldDef.Name);
+                    var typeSpecHandle = (TypeSpecificationHandle)entity;
+                    var typeSpec = reader.GetTypeSpecification(typeSpecHandle);
 
-                    var item = BuildCompletionItem(fieldName);
+                    var blobReader = reader.GetBlobReader(typeSpec.Signature);
+                    var signatureTypeCode = blobReader.ReadSignatureTypeCode();
 
-                    item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromField(reader, fieldHandle));
+                    if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
+                    {
+                        var typeCode = blobReader.ReadSignatureTypeCode();
+                        var typeHandle = blobReader.ReadTypeHandle();
 
-                    return item;
-                })
-                .ToImmutableArray();
+                        if (typeHandle == null || typeHandle.IsNil || typeHandle == default) break;
 
-            return fieldItems;
+                        entity = typeHandle;
+                    }
+                    else break;
+                }
+
+                if (entity.Kind == HandleKind.TypeDefinition)
+                {
+                    var asmTypeDefHandle = (TypeDefinitionHandle)entity;
+                    var asmTypeDef = reader.GetTypeDefinition(asmTypeDefHandle);
+                    var asmTypeFields = asmTypeDef.GetFields().Where(x =>
+                    {
+                        var field = reader.GetFieldDefinition(x);
+                        var access = field.Attributes & FieldAttributes.FieldAccessMask;
+
+                        var name = reader.GetString(field.Name);
+                        if (name.StartsWith("<") && name.EndsWith(">k__BackingField"))
+                            return false;
+
+                        return access != FieldAttributes.Private && access != FieldAttributes.PrivateScope;
+                    });
+                    fieldItems = fieldItems.Concat(asmTypeFields).ToList();
+
+                    current = asmTypeDef;
+                }
+                //TODO: Else if Kind == TypeReference
+                else break;
+            }
+
+            var completionItems = fieldItems.Select(fieldHandle =>
+            {
+                var fieldDef = reader.GetFieldDefinition(fieldHandle);
+                var fieldName = reader.GetString(fieldDef.Name);
+
+                var item = BuildCompletionItem(fieldName);
+
+                item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromField(reader, fieldHandle));
+
+                return item;
+            }).ToImmutableArray();
+
+            return completionItems;
         }
 
         private ImmutableArray<CompletionItem> GetMethodItems(TypeDefinitionHandle handle, MetadataReader reader)
