@@ -65,12 +65,14 @@ namespace MemberLens
             }
             else if (_accessorType == AccessorType.Method)
             {
-                sourceMembers = GetEffectiveMembers(_sourceType).OfType<IMethodSymbol>().Select(x => (ISymbol)x);
+                sourceMembers = GetEffectiveMembers(_sourceType)
+                    .OfType<IMethodSymbol>()
+                    .Where(symbol => symbol.Name != ".ctor" && !symbol.Name.Contains("."))
+                    .Select(x => (ISymbol)x);
             }
             else return null;
 
             var completionItems = sourceMembers
-                .Where(symbol => symbol.Name != ".ctor")
                 .Select(symbol =>
                 {
                     var item = BuildCompletionItem(symbol.Name);
@@ -121,8 +123,6 @@ namespace MemberLens
 
                 if (_itemCache.TryGetValue(key, out var cachedItems))
                     return RebuildCachedItems(cachedItems);
-
-                //TODO: Filter out explicit interfaces implementations -> .Contains(".")
 
                 ImmutableArray<CompletionItem> items;
                 if (_accessorType == AccessorType.Field)
@@ -269,7 +269,7 @@ namespace MemberLens
                     var methodDef = reader.GetMethodDefinition(methodHandle);
                     var methodName = reader.GetString(methodDef.Name);
 
-                    if (methodName == ".ctor") return null;
+                    if (methodName == ".ctor" || methodName.Contains(".")) return null;
 
                     var item = BuildCompletionItem(methodName);
 
