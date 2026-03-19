@@ -32,7 +32,7 @@ namespace MemberLens
             var typeParamNames = new HashSet<string>();
             foreach (var tp in context.TypeParameters)
                 typeParamNames.Add(tp);
-            foreach (var mp in context.MethodParameters) // only in FromMethod
+            foreach (var mp in context.MethodParameters)
                 typeParamNames.Add(mp);
             info.TypeParameterNames = typeParamNames;
 
@@ -172,8 +172,6 @@ namespace MemberLens
             var typeParamNames = new HashSet<string>();
             foreach (var tp in context.TypeParameters)
                 typeParamNames.Add(tp);
-            foreach (var mp in context.MethodParameters) // only in FromMethod
-                typeParamNames.Add(mp);
             info.TypeParameterNames = typeParamNames;
 
             // Modifiers
@@ -252,8 +250,6 @@ namespace MemberLens
             var typeParamNames = new HashSet<string>();
             foreach (var tp in context.TypeParameters)
                 typeParamNames.Add(tp);
-            foreach (var mp in context.MethodParameters) // only in FromMethod
-                typeParamNames.Add(mp);
             info.TypeParameterNames = typeParamNames;
 
             // Modifiers — derived from the accessor method attributes
@@ -335,6 +331,7 @@ namespace MemberLens
             info.SignatureParts.Add(DisplayPart.Space());
         }
 
+        //TODO: Move this somewhere more fitting
         /// <summary>
         /// Checks whether the type string is a C# keyword like int, string, etc.
         /// so we can classify it as Keyword rather than Type in the tooltip.

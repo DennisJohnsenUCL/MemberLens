@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using MemberLens.Attributes;
@@ -60,11 +61,11 @@ namespace MemberLens
 
             if (_accessorType == AccessorType.Field)
             {
-                sourceMembers = _sourceType.GetMembers().OfType<IFieldSymbol>().Select(x => (ISymbol)x);
+                sourceMembers = GetEffectiveMembers(_sourceType).OfType<IFieldSymbol>().Select(x => (ISymbol)x);
             }
             else if (_accessorType == AccessorType.Method)
             {
-                sourceMembers = _sourceType.GetMembers().OfType<IMethodSymbol>().Select(x => (ISymbol)x);
+                sourceMembers = GetEffectiveMembers(_sourceType).OfType<IMethodSymbol>().Select(x => (ISymbol)x);
             }
             else return null;
 
@@ -85,11 +86,6 @@ namespace MemberLens
 
         private ImmutableArray<CompletionItem>? GetMetadataCompletionItems()
         {
-            //TODO: nested source class
-            //TODO: Add more members: properties getter/setter
-            //TODO: Test how inheritance works: protected fields, public methods, public properties
-            //TODO: Interfaces: Implicit, explicit, inherited
-
             var compilation = _semanticModel.Compilation;
 
             var assembly = _sourceType.ContainingAssembly;
@@ -276,6 +272,83 @@ namespace MemberLens
 
                 return refreshedItem;
             }).ToImmutableArray();
+        }
+
+        //TODO: Move everything related to this (below here) elsewhere
+        public static IEnumerable<ISymbol> GetEffectiveMembers(INamedTypeSymbol type)
+        {
+            var seen = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
+            var emittedSignatures = new HashSet<string>();
+
+            var current = type;
+            while (current != null && current.SpecialType != SpecialType.System_Object)
+            {
+                foreach (var member in current.GetMembers())
+                {
+                    if (IsObjectMember(member))
+                        continue;
+
+                    if (member.IsImplicitlyDeclared)
+                        continue;
+
+                    var sig = GetMemberSignature(member);
+
+                    if (!emittedSignatures.Add(sig))
+                        continue;
+
+                    seen.Add(member);
+                    yield return member;
+                }
+
+                current = current.BaseType;
+            }
+        }
+
+        private static string GetMemberSignature(ISymbol symbol)
+        {
+            switch (symbol)
+            {
+                case IMethodSymbol method:
+                    var parameters = string.Join(",",
+                        method.Parameters.Select(p =>
+                            p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+                    return $"M:{method.Name}({parameters})";
+
+                case IPropertySymbol property:
+                    if (property.IsIndexer)
+                    {
+                        var indexerParams = string.Join(",",
+                            property.Parameters.Select(p =>
+                                p.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)));
+                        return $"P:this[{indexerParams}]";
+                    }
+                    return $"P:{property.Name}";
+
+                case IFieldSymbol field:
+                    return $"F:{field.Name}";
+
+                case IEventSymbol evt:
+                    return $"E:{evt.Name}";
+
+                case INamedTypeSymbol type:
+                    return $"T:{type.Name}+{(type).Arity}";
+
+                default:
+                    return $"?:{symbol.Name}";
+            }
+        }
+
+        private static bool IsObjectMember(ISymbol symbol)
+        {
+            if (symbol is IMethodSymbol method)
+            {
+                var root = method;
+                while (root.OverriddenMethod != null)
+                    root = root.OverriddenMethod;
+                return root.ContainingType.SpecialType == SpecialType.System_Object;
+            }
+
+            return symbol.ContainingType.SpecialType == SpecialType.System_Object;
         }
     }
 }
