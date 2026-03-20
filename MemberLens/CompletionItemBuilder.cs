@@ -146,7 +146,16 @@ namespace MemberLens
         {
             var typeDef = reader.GetTypeDefinition(handle);
 
-            var fieldItems = typeDef.GetFields().ToList();
+            var fieldItems = typeDef.GetFields().Where(x =>
+            {
+                var field = reader.GetFieldDefinition(x);
+
+                var name = reader.GetString(field.Name);
+                if (name.StartsWith("<") && name.EndsWith(">k__BackingField"))
+                    return false;
+
+                return true;
+            }).ToList();
 
             var completionItems = fieldItems.Select(fieldHandle =>
             {
@@ -194,9 +203,9 @@ namespace MemberLens
 
             if (entity.Kind == HandleKind.TypeDefinition)
             {
-                var asmTypeDefHandle = (TypeDefinitionHandle)entity;
-                var asmTypeDef = reader.GetTypeDefinition(asmTypeDefHandle);
-                var asmTypeFields = asmTypeDef.GetFields().Where(x =>
+                var typeDefHandle = (TypeDefinitionHandle)entity;
+                var typeDef = reader.GetTypeDefinition(typeDefHandle);
+                var typeDefFields = typeDef.GetFields().Where(x =>
                 {
                     var field = reader.GetFieldDefinition(x);
 
@@ -209,7 +218,7 @@ namespace MemberLens
                     return access != FieldAttributes.Private && access != FieldAttributes.PrivateScope;
                 });
 
-                var completionItems = asmTypeFields.Select(fieldHandle =>
+                var completionItems = typeDefFields.Select(fieldHandle =>
                 {
                     var fieldDef = reader.GetFieldDefinition(fieldHandle);
                     var fieldName = reader.GetString(fieldDef.Name);
@@ -221,7 +230,7 @@ namespace MemberLens
                     return item;
                 });
 
-                var asmEntity = asmTypeDef.BaseType;
+                var asmEntity = typeDef.BaseType;
 
                 if (asmEntity.IsNil || asmEntity == null || asmEntity == default)
                     return completionItems.ToImmutableArray();
