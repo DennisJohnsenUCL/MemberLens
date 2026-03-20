@@ -175,7 +175,6 @@ namespace MemberLens
                 return completionItems.ToImmutableArray();
 
             return completionItems.Concat(GetInheritedFieldItems(entity, reader)).ToImmutableArray();
-
         }
 
         private ImmutableArray<CompletionItem> GetInheritedFieldItems(EntityHandle entity, MetadataReader reader)
@@ -323,71 +322,173 @@ namespace MemberLens
         {
             var typeDef = reader.GetTypeDefinition(handle);
 
-            var methodItems = typeDef.GetMethods().ToList();
-
-            TypeDefinition? current = typeDef;
-            while (true)
+            var methodItems = typeDef.GetMethods().Where(x =>
             {
-                var entity = current.Value.BaseType;
-                if (entity.IsNil || entity == null || entity == default) break;
+                var method = reader.GetMethodDefinition(x);
 
-                if (entity.Kind == HandleKind.TypeSpecification)
+                var name = reader.GetString(method.Name);
+                if (name == ".ctor" || name.Contains(".")) return false;
+
+                return true;
+            }).ToList();
+
+            var completionItems = methodItems.Select(methodHandle =>
+            {
+                var methodDef = reader.GetMethodDefinition(methodHandle);
+                var methodName = reader.GetString(methodDef.Name);
+
+                var item = BuildCompletionItem(methodName);
+
+                item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromMethod(reader, methodHandle));
+
+                return item;
+            });
+
+            var entity = typeDef.BaseType;
+
+            if (entity.IsNil || entity == null || entity == default)
+                return completionItems.ToImmutableArray();
+
+            return completionItems.Concat(GetInheritedMethodItems(entity, reader)).ToImmutableArray();
+
+        }
+
+        private ImmutableArray<CompletionItem> GetInheritedMethodItems(EntityHandle entity, MetadataReader reader)
+        {
+            if (entity.Kind == HandleKind.TypeSpecification)
+            {
+                var typeSpecHandle = (TypeSpecificationHandle)entity;
+                var typeSpec = reader.GetTypeSpecification(typeSpecHandle);
+
+                var blobReader = reader.GetBlobReader(typeSpec.Signature);
+                var signatureTypeCode = blobReader.ReadSignatureTypeCode();
+
+                if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
                 {
-                    var typeSpecHandle = (TypeSpecificationHandle)entity;
-                    var typeSpec = reader.GetTypeSpecification(typeSpecHandle);
+                    blobReader.ReadSignatureTypeCode();
+                    var typeHandle = blobReader.ReadTypeHandle();
 
-                    var blobReader = reader.GetBlobReader(typeSpec.Signature);
-                    var signatureTypeCode = blobReader.ReadSignatureTypeCode();
+                    if (typeHandle == null || typeHandle.IsNil || typeHandle == default)
+                        return ImmutableArray<CompletionItem>.Empty;
 
-                    if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
-                    {
-                        blobReader.ReadSignatureTypeCode();
-                        var typeHandle = blobReader.ReadTypeHandle();
-
-                        if (typeHandle == null || typeHandle.IsNil || typeHandle == default) break;
-
-                        entity = typeHandle;
-                    }
-                    else break;
+                    entity = typeHandle;
                 }
-
-                if (entity.Kind == HandleKind.TypeDefinition)
-                {
-                    var asmTypeDefHandle = (TypeDefinitionHandle)entity;
-                    var asmTypeDef = reader.GetTypeDefinition(asmTypeDefHandle);
-                    var asmTypeMethods = asmTypeDef.GetMethods().Where(x =>
-                    {
-                        var method = reader.GetMethodDefinition(x);
-                        var access = method.Attributes & MethodAttributes.MemberAccessMask;
-
-                        return access != MethodAttributes.Private && access != MethodAttributes.PrivateScope;
-                    });
-                    methodItems = methodItems.Concat(asmTypeMethods).ToList();
-
-                    current = asmTypeDef;
-                }
-                //TODO: Else if Kind == TypeReference
-                else break;
+                else return ImmutableArray<CompletionItem>.Empty;
             }
 
-            var completionItems = methodItems
-                .Select(methodHandle =>
+            if (entity.Kind == HandleKind.TypeDefinition)
+            {
+                var typeDefHandle = (TypeDefinitionHandle)entity;
+                var typeDef = reader.GetTypeDefinition(typeDefHandle);
+                var typeDefMethods = typeDef.GetMethods().Where(x =>
+                {
+                    var method = reader.GetMethodDefinition(x);
+
+                    var name = reader.GetString(method.Name);
+                    if (name == ".ctor" || name.Contains(".")) return false;
+
+                    var access = method.Attributes & MethodAttributes.MemberAccessMask;
+
+                    return access != MethodAttributes.Private && access != MethodAttributes.PrivateScope;
+                });
+
+                var completionItems = typeDefMethods.Select(methodHandle =>
                 {
                     var methodDef = reader.GetMethodDefinition(methodHandle);
                     var methodName = reader.GetString(methodDef.Name);
-
-                    if (methodName == ".ctor" || methodName.Contains(".")) return null;
 
                     var item = BuildCompletionItem(methodName);
 
                     item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromMethod(reader, methodHandle));
 
                     return item;
-                })
-                .Where(item => item != null)
-                .ToImmutableArray();
+                });
 
-            return completionItems;
+                var asmEntity = typeDef.BaseType;
+
+                if (asmEntity.IsNil || asmEntity == null || asmEntity == default)
+                    return completionItems.ToImmutableArray();
+
+                return completionItems.Concat(GetInheritedMethodItems(asmEntity, reader)).ToImmutableArray();
+            }
+
+            else if (entity.Kind == HandleKind.TypeReference)
+            {
+                var typeRefHandle = (TypeReferenceHandle)entity;
+                var typeRef = reader.GetTypeReference(typeRefHandle);
+                var resScope = typeRef.ResolutionScope;
+                if (resScope.Kind != HandleKind.AssemblyReference) return ImmutableArray<CompletionItem>.Empty;
+
+                var asmRefHandle = (AssemblyReferenceHandle)resScope;
+                var asmRef = reader.GetAssemblyReference(asmRefHandle);
+                var asmName = reader.GetString(asmRef.Name);
+
+                if (asmName.StartsWith("System.") || asmName.StartsWith("Microsoft.")) return ImmutableArray<CompletionItem>.Empty;
+
+                var compilation = _semanticModel.Compilation;
+
+                var metadataRef = compilation.References
+                    .OfType<PortableExecutableReference>()
+                    .FirstOrDefault(r =>
+                    {
+                        var identity = compilation.GetAssemblyOrModuleSymbol(r) as IAssemblySymbol;
+                        return identity?.Name == asmName;
+                    });
+
+                if (metadataRef?.FilePath == null) return ImmutableArray<CompletionItem>.Empty;
+
+                using (var stream = File.OpenRead(metadataRef.FilePath))
+                using (var peReader = new PEReader(stream))
+                {
+                    var extReader = peReader.GetMetadataReader();
+
+                    var sourceFullName = BuildFullName(reader, typeRefHandle);
+
+                    var matchFullName = string.Empty;
+                    var match = extReader.TypeDefinitions
+                        .Where(tdh => extReader.GetString(extReader.GetTypeDefinition(tdh).Name) == reader.GetString(typeRef.Name))
+                        .FirstOrDefault(tdh =>
+                        {
+                            matchFullName = BuildFullName(extReader, tdh);
+                            return matchFullName == sourceFullName;
+                        });
+
+                    if (match.IsNil || match == default) return ImmutableArray<CompletionItem>.Empty;
+
+                    var extTypeDef = extReader.GetTypeDefinition(match);
+
+                    var extTypeMethods = extTypeDef.GetMethods().Where(x =>
+                    {
+                        var method = extReader.GetMethodDefinition(x);
+                        var access = method.Attributes & MethodAttributes.MemberAccessMask;
+
+                        var name = extReader.GetString(method.Name);
+                        if (name == ".ctor" || name.Contains(".")) return false;
+
+                        return access != MethodAttributes.Private && access != MethodAttributes.PrivateScope;
+                    });
+
+                    var completionItems = extTypeMethods.Select(methodHandle =>
+                    {
+                        var methodDef = extReader.GetMethodDefinition(methodHandle);
+                        var methodName = extReader.GetString(methodDef.Name);
+
+                        var item = BuildCompletionItem(methodName);
+
+                        item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromMethod(extReader, methodHandle));
+
+                        return item;
+                    });
+
+                    var extEntity = extTypeDef.BaseType;
+
+                    if (extEntity.IsNil || extEntity == null || extEntity == default)
+                        return completionItems.ToImmutableArray();
+
+                    return completionItems.Concat(GetInheritedMethodItems(extEntity, extReader)).ToImmutableArray();
+                }
+            }
+            else return ImmutableArray<CompletionItem>.Empty;
         }
 
         private CompletionItem BuildCompletionItem(string displayName)
