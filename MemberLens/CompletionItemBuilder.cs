@@ -92,11 +92,11 @@ namespace MemberLens
 
             var assembly = _sourceType.ContainingAssembly;
 
-            if (!(compilation.GetMetadataReference(
-                assembly) is PortableExecutableReference reference)) return null;
-
             var assemblyName = assembly.Name;
             if (assemblyName.StartsWith("System.") || assemblyName.StartsWith("Microsoft.")) return null;
+
+            if (!(compilation.GetMetadataReference(
+                assembly) is PortableExecutableReference reference)) return null;
 
             var path = reference.FilePath;
             if (path == null) return null;
@@ -148,55 +148,6 @@ namespace MemberLens
 
             var fieldItems = typeDef.GetFields().ToList();
 
-            TypeDefinition? current = typeDef;
-            while (true)
-            {
-                var entity = current.Value.BaseType;
-                if (entity.IsNil || entity == null || entity == default) break;
-
-                if (entity.Kind == HandleKind.TypeSpecification)
-                {
-                    var typeSpecHandle = (TypeSpecificationHandle)entity;
-                    var typeSpec = reader.GetTypeSpecification(typeSpecHandle);
-
-                    var blobReader = reader.GetBlobReader(typeSpec.Signature);
-                    var signatureTypeCode = blobReader.ReadSignatureTypeCode();
-
-                    if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
-                    {
-                        var typeCode = blobReader.ReadSignatureTypeCode();
-                        var typeHandle = blobReader.ReadTypeHandle();
-
-                        if (typeHandle == null || typeHandle.IsNil || typeHandle == default) break;
-
-                        entity = typeHandle;
-                    }
-                    else break;
-                }
-
-                if (entity.Kind == HandleKind.TypeDefinition)
-                {
-                    var asmTypeDefHandle = (TypeDefinitionHandle)entity;
-                    var asmTypeDef = reader.GetTypeDefinition(asmTypeDefHandle);
-                    var asmTypeFields = asmTypeDef.GetFields().Where(x =>
-                    {
-                        var field = reader.GetFieldDefinition(x);
-                        var access = field.Attributes & FieldAttributes.FieldAccessMask;
-
-                        var name = reader.GetString(field.Name);
-                        if (name.StartsWith("<") && name.EndsWith(">k__BackingField"))
-                            return false;
-
-                        return access != FieldAttributes.Private && access != FieldAttributes.PrivateScope;
-                    });
-                    fieldItems = fieldItems.Concat(asmTypeFields).ToList();
-
-                    current = asmTypeDef;
-                }
-                //TODO: Else if Kind == TypeReference
-                else break;
-            }
-
             var completionItems = fieldItems.Select(fieldHandle =>
             {
                 var fieldDef = reader.GetFieldDefinition(fieldHandle);
@@ -207,9 +158,156 @@ namespace MemberLens
                 item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromField(reader, fieldHandle));
 
                 return item;
-            }).ToImmutableArray();
+            });
 
-            return completionItems;
+            var entity = typeDef.BaseType;
+
+            if (entity.IsNil || entity == null || entity == default)
+                return completionItems.ToImmutableArray();
+
+            return completionItems.Concat(GetInheritedFieldItems(entity, reader)).ToImmutableArray();
+
+        }
+
+        private ImmutableArray<CompletionItem> GetInheritedFieldItems(EntityHandle entity, MetadataReader reader)
+        {
+            if (entity.Kind == HandleKind.TypeSpecification)
+            {
+                var typeSpecHandle = (TypeSpecificationHandle)entity;
+                var typeSpec = reader.GetTypeSpecification(typeSpecHandle);
+
+                var blobReader = reader.GetBlobReader(typeSpec.Signature);
+                var signatureTypeCode = blobReader.ReadSignatureTypeCode();
+
+                if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
+                {
+                    blobReader.ReadSignatureTypeCode();
+                    var typeHandle = blobReader.ReadTypeHandle();
+
+                    if (typeHandle == null || typeHandle.IsNil || typeHandle == default)
+                        return ImmutableArray<CompletionItem>.Empty;
+
+                    entity = typeHandle;
+                }
+                else return ImmutableArray<CompletionItem>.Empty;
+            }
+
+            if (entity.Kind == HandleKind.TypeDefinition)
+            {
+                var asmTypeDefHandle = (TypeDefinitionHandle)entity;
+                var asmTypeDef = reader.GetTypeDefinition(asmTypeDefHandle);
+                var asmTypeFields = asmTypeDef.GetFields().Where(x =>
+                {
+                    var field = reader.GetFieldDefinition(x);
+
+                    var name = reader.GetString(field.Name);
+                    if (name.StartsWith("<") && name.EndsWith(">k__BackingField"))
+                        return false;
+
+                    var access = field.Attributes & FieldAttributes.FieldAccessMask;
+
+                    return access != FieldAttributes.Private && access != FieldAttributes.PrivateScope;
+                });
+
+                var completionItems = asmTypeFields.Select(fieldHandle =>
+                {
+                    var fieldDef = reader.GetFieldDefinition(fieldHandle);
+                    var fieldName = reader.GetString(fieldDef.Name);
+
+                    var item = BuildCompletionItem(fieldName);
+
+                    item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromField(reader, fieldHandle));
+
+                    return item;
+                });
+
+                var asmEntity = asmTypeDef.BaseType;
+
+                if (asmEntity.IsNil || asmEntity == null || asmEntity == default)
+                    return completionItems.ToImmutableArray();
+
+                return completionItems.Concat(GetInheritedFieldItems(asmEntity, reader)).ToImmutableArray();
+            }
+
+            else if (entity.Kind == HandleKind.TypeReference)
+            {
+                var typeRefHandle = (TypeReferenceHandle)entity;
+                var typeRef = reader.GetTypeReference(typeRefHandle);
+                var resScope = typeRef.ResolutionScope;
+                if (resScope.Kind != HandleKind.AssemblyReference) return ImmutableArray<CompletionItem>.Empty;
+
+                var asmRefHandle = (AssemblyReferenceHandle)resScope;
+                var asmRef = reader.GetAssemblyReference(asmRefHandle);
+                var asmName = reader.GetString(asmRef.Name);
+
+                if (asmName.StartsWith("System.") || asmName.StartsWith("Microsoft.")) return ImmutableArray<CompletionItem>.Empty;
+
+                var compilation = _semanticModel.Compilation;
+
+                var metadataRef = compilation.References
+                    .OfType<PortableExecutableReference>()
+                    .FirstOrDefault(r =>
+                    {
+                        var identity = compilation.GetAssemblyOrModuleSymbol(r) as IAssemblySymbol;
+                        return identity?.Name == asmName;
+                    });
+
+                if (metadataRef?.FilePath == null) return ImmutableArray<CompletionItem>.Empty;
+
+                using (var stream = File.OpenRead(metadataRef.FilePath))
+                using (var peReader = new PEReader(stream))
+                {
+                    var extReader = peReader.GetMetadataReader();
+
+                    var sourceFullName = BuildFullName(reader, typeRefHandle);
+
+                    var matchFullName = string.Empty;
+                    var match = extReader.TypeDefinitions
+                        .Where(tdh => extReader.GetString(extReader.GetTypeDefinition(tdh).Name) == reader.GetString(typeRef.Name))
+                        .FirstOrDefault(tdh =>
+                        {
+                            matchFullName = BuildFullName(extReader, tdh);
+                            return matchFullName == sourceFullName;
+                        });
+
+                    if (match.IsNil || match == default) return ImmutableArray<CompletionItem>.Empty;
+
+                    var extTypeDef = extReader.GetTypeDefinition(match);
+
+                    var extTypeFields = extTypeDef.GetFields().Where(x =>
+                    {
+                        var field = extReader.GetFieldDefinition(x);
+                        var access = field.Attributes & FieldAttributes.FieldAccessMask;
+
+                        var name = extReader.GetString(field.Name);
+
+                        if (name.StartsWith("<") && name.EndsWith(">k__BackingField"))
+                            return false;
+
+                        return access != FieldAttributes.Private && access != FieldAttributes.PrivateScope;
+                    });
+
+                    var completionItems = extTypeFields.Select(fieldHandle =>
+                    {
+                        var fieldDef = extReader.GetFieldDefinition(fieldHandle);
+                        var fieldName = extReader.GetString(fieldDef.Name);
+
+                        var item = BuildCompletionItem(fieldName);
+
+                        item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromField(extReader, fieldHandle));
+
+                        return item;
+                    });
+
+                    var extEntity = extTypeDef.BaseType;
+
+                    if (extEntity.IsNil || extEntity == null || extEntity == default)
+                        return completionItems.ToImmutableArray();
+
+                    return completionItems.Concat(GetInheritedFieldItems(extEntity, extReader)).ToImmutableArray();
+                }
+            }
+            else return ImmutableArray<CompletionItem>.Empty;
         }
 
         private ImmutableArray<CompletionItem> GetMethodItems(TypeDefinitionHandle handle, MetadataReader reader)
@@ -234,7 +332,7 @@ namespace MemberLens
 
                     if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
                     {
-                        var typeCode = blobReader.ReadSignatureTypeCode();
+                        blobReader.ReadSignatureTypeCode();
                         var typeHandle = blobReader.ReadTypeHandle();
 
                         if (typeHandle == null || typeHandle.IsNil || typeHandle == default) break;
@@ -332,6 +430,20 @@ namespace MemberLens
             return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
         }
 
+        private static string BuildFullName(MetadataReader reader, TypeReferenceHandle handle)
+        {
+            var typeRef = reader.GetTypeReference(handle);
+            var name = reader.GetString(typeRef.Name);
+
+            if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
+            {
+                return BuildFullName(reader, (TypeReferenceHandle)typeRef.ResolutionScope) + "/" + name;
+            }
+
+            var ns = reader.GetString(typeRef.Namespace);
+            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
+        }
+
         private static string BuildFullName(INamedTypeSymbol symbol)
         {
             var name = symbol.MetadataName;
@@ -375,7 +487,6 @@ namespace MemberLens
         //TODO: Move everything related to this (below here) elsewhere
         public static IEnumerable<ISymbol> GetEffectiveMembers(INamedTypeSymbol type)
         {
-            var seen = new HashSet<ISymbol>(SymbolEqualityComparer.Default);
             var emittedSignatures = new HashSet<string>();
 
             var current = type;
@@ -394,7 +505,6 @@ namespace MemberLens
                     if (!emittedSignatures.Add(sig))
                         continue;
 
-                    seen.Add(member);
                     yield return member;
                 }
 
