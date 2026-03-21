@@ -51,6 +51,8 @@
     <Compile Include="CompletionSymbolContext.cs" />
     <Compile Include="MemberAccessorCompletionSource.cs" />
     <Compile Include="MemberAccessorCompletionSourceProvider.cs" />
+    <Compile Include="MetadataMembers\MetadataCrawler.cs" />
+    <Compile Include="MetadataMembers\MetadataHelper.cs" />
     <Compile Include="MetadataMembers\MetadataMemberInfo.cs" />
     <Compile Include="MetadataMembers\MetadataResolver.cs" />
     <Compile Include="MetadataTooltips\DisplayPart.cs" />

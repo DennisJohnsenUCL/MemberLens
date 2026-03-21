@@ -6,13 +6,13 @@ namespace MemberLens
     {
         public SymbolInfo MethodSymbolInfo { get; }
         public int ArgumentIndex { get; }
-        public SemanticModel SemanticModel { get; }
+        public Compilation Compilation { get; }
 
-        public CompletionSymbolContext(SymbolInfo methodSymbolInfo, int argumentIndex, SemanticModel semanticModel)
+        public CompletionSymbolContext(SymbolInfo methodSymbolInfo, int argumentIndex, Compilation compilation)
         {
             MethodSymbolInfo = methodSymbolInfo;
             ArgumentIndex = argumentIndex;
-            SemanticModel = semanticModel;
+            Compilation = compilation;
         }
     }
 }

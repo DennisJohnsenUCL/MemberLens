@@ -31,7 +31,7 @@ namespace MemberLens
 
             var accessorType = (AccessorType)(int)constructorArgs[0].Value;
 
-            var completionItems = new CompletionItemBuilder(sourceType, accessorType, this, symCtx.SemanticModel).Build();
+            var completionItems = new CompletionItemBuilder(sourceType, accessorType, this, symCtx.Compilation).Build();
             if (completionItems == null) return Empty;
 
             var completionContext = new CompletionContext(completionItems.Value);

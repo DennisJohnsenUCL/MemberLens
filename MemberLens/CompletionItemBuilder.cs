@@ -19,7 +19,6 @@ namespace MemberLens
         private readonly INamedTypeSymbol _sourceType;
         private readonly AccessorType _accessorType;
         private readonly MemberAccessorCompletionSource _source;
-        private readonly SemanticModel _semanticModel;
 
         private readonly ImageElement _icon;
         private readonly MetadataResolver _resolver;
@@ -28,15 +27,14 @@ namespace MemberLens
             INamedTypeSymbol sourceType,
             AccessorType accessorType,
             MemberAccessorCompletionSource source,
-            SemanticModel semanticModel)
+            Compilation compilation)
         {
             _sourceType = sourceType;
             _accessorType = accessorType;
             _source = source;
-            _semanticModel = semanticModel;
 
             _icon = GetIcon();
-            _resolver = new MetadataResolver(_semanticModel.Compilation, _accessorType, _sourceType);
+            _resolver = new MetadataResolver(compilation, _accessorType, _sourceType);
         }
 
         public ImmutableArray<CompletionItem>? Build()
@@ -45,6 +43,7 @@ namespace MemberLens
             if (_sourceType.Locations[0].IsInSource)
                 completionItems = GetSourceCompletionItems();
 
+            //TODO: Maybe own method
             else if (_sourceType.Locations[0].IsInMetadata)
             {
                 if (_itemCache.TryGetValue(_resolver.RootKey, out var cachedItems))

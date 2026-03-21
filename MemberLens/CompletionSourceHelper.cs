@@ -42,7 +42,7 @@ namespace MemberLens
             var methodSymbolInfo = semanticModel.GetSymbolInfo(expressionSyntax, token);
             int argumentIndex = argumentListSyntax.Arguments.GetSeparators().Count(separator => separator.SpanStart < position);
 
-            return new CompletionSymbolContext(methodSymbolInfo, argumentIndex, semanticModel);
+            return new CompletionSymbolContext(methodSymbolInfo, argumentIndex, semanticModel.Compilation);
         }
 
         internal static (IMethodSymbol MethodSymbol, AttributeData MemberAccessorAttribute)? GetSymbolAndAttribute(
