@@ -1,12 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
 using MemberLens.Attributes;
+using MemberLens.MetadataMembers;
 using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.Core.Imaging;
 using Microsoft.VisualStudio.Imaging;
@@ -23,7 +20,9 @@ namespace MemberLens
         private readonly AccessorType _accessorType;
         private readonly MemberAccessorCompletionSource _source;
         private readonly SemanticModel _semanticModel;
+
         private readonly ImageElement _icon;
+        private readonly MetadataResolver _resolver;
 
         public CompletionItemBuilder(
             INamedTypeSymbol sourceType,
@@ -37,6 +36,7 @@ namespace MemberLens
             _semanticModel = semanticModel;
 
             _icon = GetIcon();
+            _resolver = new MetadataResolver(_semanticModel.Compilation, _accessorType, _sourceType);
         }
 
         public ImmutableArray<CompletionItem>? Build()
@@ -46,7 +46,21 @@ namespace MemberLens
                 completionItems = GetSourceCompletionItems();
 
             else if (_sourceType.Locations[0].IsInMetadata)
-                completionItems = GetMetadataCompletionItems();
+            {
+                if (_itemCache.TryGetValue(_resolver.RootKey, out var cachedItems))
+                    return RebuildCachedItems(cachedItems);
+
+                var metadataMemberInfos = _resolver.GetMetadataMemberInfos();
+                completionItems = metadataMemberInfos.Select(x =>
+                {
+                    var item = BuildCompletionItem(x.Name);
+                    item.Properties.AddProperty("memberDef", x.MemberDefinitionInfo);
+                    return item;
+                }).ToImmutableArray();
+
+                if (!_itemCache.ContainsKey(_resolver.RootKey))
+                    _itemCache.Add(_resolver.RootKey, completionItems.Value);
+            }
 
             else return null;
 
@@ -65,6 +79,7 @@ namespace MemberLens
             {
                 sourceMembers = GetEffectiveMembers(_sourceType)
                     .OfType<IMethodSymbol>()
+                    //TODO: Deduplicate this
                     .Where(symbol => symbol.Name != ".ctor" && !symbol.Name.Contains("."))
                     .Select(x => (ISymbol)x);
             }
@@ -82,306 +97,6 @@ namespace MemberLens
                 .ToImmutableArray();
 
             return completionItems;
-        }
-
-        private ImmutableArray<CompletionItem>? GetMetadataCompletionItems()
-        {
-            var compilation = _semanticModel.Compilation;
-
-            var assembly = _sourceType.ContainingAssembly;
-
-            if (IsCoreLibAssembly(assembly.Name)) return null;
-
-            if (!(compilation.GetMetadataReference(
-                assembly) is PortableExecutableReference reference)) return null;
-
-            var path = reference.FilePath;
-            if (path == null) return null;
-
-            var stream = File.OpenRead(path);
-            var peReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata);
-            var mdReader = peReader.GetMetadataReader();
-
-            var sourceFullName = BuildFullName(_sourceType);
-
-            var match = FindTypeDefinition(mdReader, _sourceType.MetadataName, sourceFullName);
-            if (match == null || match.Value.IsNil || match.Value == default) return null;
-
-            var key = BuildFullName(mdReader, match.Value) + _accessorType.ToString();
-
-            if (_itemCache.TryGetValue(key, out var cachedItems))
-                return RebuildCachedItems(cachedItems);
-
-            ImmutableArray<CompletionItem> items;
-            if (_accessorType == AccessorType.Field)
-                items = GetFieldItems(match.Value, mdReader, peReader);
-
-            else if (_accessorType == AccessorType.Method)
-                items = GetMethodItems(match.Value, mdReader, peReader);
-
-            else throw new InvalidOperationException();
-
-            if (!_itemCache.ContainsKey(key))
-                _itemCache.Add(key, items);
-
-            return items;
-        }
-
-        private TypeDefinitionContext ResolveEntityHandle(EntityHandle entity, MetadataReader mdReader, PEReader peReader)
-        {
-            TypeDefinitionContext NoContext()
-            {
-                peReader.Dispose();
-                return null;
-            }
-
-            if (entity.Kind == HandleKind.TypeSpecification)
-            {
-                if (!(ResolveTypeSpecification((TypeSpecificationHandle)entity, mdReader) is EntityHandle resolved))
-                    return NoContext();
-                entity = resolved;
-            }
-
-            if (entity.Kind == HandleKind.TypeDefinition)
-            {
-                var typeDefHandle = (TypeDefinitionHandle)entity;
-                var typeDef = mdReader.GetTypeDefinition(typeDefHandle);
-                return new TypeDefinitionContext(typeDef, peReader, mdReader);
-            }
-
-            else if (entity.Kind == HandleKind.TypeReference)
-            {
-                var typeRefHandle = (TypeReferenceHandle)entity;
-                return ResolveTypeReference(typeRefHandle, mdReader, peReader);
-            }
-            else return NoContext();
-        }
-
-        private TypeDefinitionContext ResolveTypeReference(TypeReferenceHandle typeRefHandle, MetadataReader mdReader, PEReader peReader)
-        {
-            TypeDefinitionContext NoContext()
-            {
-                peReader.Dispose();
-                return null;
-            }
-
-            var typeRef = mdReader.GetTypeReference(typeRefHandle);
-            var resScope = typeRef.ResolutionScope;
-            if (resScope.Kind != HandleKind.AssemblyReference) return NoContext();
-
-            var asmRefHandle = (AssemblyReferenceHandle)resScope;
-            var asmRef = mdReader.GetAssemblyReference(asmRefHandle);
-            var asmName = mdReader.GetString(asmRef.Name);
-
-            if (IsCoreLibAssembly(asmName)) return NoContext();
-
-            var compilation = _semanticModel.Compilation;
-
-            var metadataRef = compilation.References
-                .OfType<PortableExecutableReference>()
-                .FirstOrDefault(r =>
-                {
-                    var identity = compilation.GetAssemblyOrModuleSymbol(r) as IAssemblySymbol;
-                    return identity?.Name == asmName;
-                });
-
-            if (metadataRef?.FilePath == null) return NoContext();
-
-            var stream = File.OpenRead(metadataRef.FilePath);
-            var extPeReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata);
-            var extMdReader = extPeReader.GetMetadataReader();
-
-            var sourceName = mdReader.GetString(typeRef.Name);
-            var sourceFullName = BuildFullName(mdReader, typeRefHandle);
-
-            var match = FindTypeDefinition(extMdReader, sourceName, sourceFullName);
-
-            if (match == null || match.Value.IsNil || match.Value == default)
-            {
-                extPeReader.Dispose();
-                return NoContext();
-            }
-
-            peReader.Dispose();
-
-            var extTypeDef = extMdReader.GetTypeDefinition(match.Value);
-            return new TypeDefinitionContext(extTypeDef, extPeReader, extMdReader);
-        }
-
-        private static bool IsCoreLibAssembly(string assemblyName)
-        {
-            return assemblyName.StartsWith("System.") || assemblyName.StartsWith("Microsoft.");
-        }
-
-        private static bool IsBackingField(MetadataReader reader, FieldDefinitionHandle handle)
-        {
-            var name = reader.GetString(reader.GetFieldDefinition(handle).Name);
-            return name.StartsWith("<") && name.EndsWith(">k__BackingField");
-        }
-
-        public static bool IsAccessibleFromDerived(MetadataReader reader, FieldDefinitionHandle handle)
-        {
-            var access = reader.GetFieldDefinition(handle).Attributes & FieldAttributes.FieldAccessMask;
-            return access != FieldAttributes.Private && access != FieldAttributes.PrivateScope;
-        }
-
-        public static bool IsAccessibleFromDerived(MetadataReader reader, MethodDefinitionHandle handle)
-        {
-            var access = reader.GetMethodDefinition(handle).Attributes & MethodAttributes.MemberAccessMask;
-            return access != MethodAttributes.Private && access != MethodAttributes.PrivateScope;
-        }
-
-        public static bool IsCtorOrExplicit(MetadataReader reader, MethodDefinitionHandle handle)
-        {
-            var name = reader.GetString(reader.GetMethodDefinition(handle).Name);
-            return name == ".ctor" || name.Contains(".");
-        }
-
-        private ImmutableArray<CompletionItem> GetFieldItems(TypeDefinitionHandle handle, MetadataReader reader, PEReader peReader)
-        {
-            var typeDef = reader.GetTypeDefinition(handle);
-
-            var fieldItems = typeDef.GetFields().Where(x => !IsBackingField(reader, x));
-
-            var completionItems = BuildFieldCompletionItems(fieldItems, reader).ToList();
-
-            var entity = typeDef.BaseType;
-
-            if (entity.IsNil || entity == null || entity == default)
-            {
-                peReader.Dispose();
-                return completionItems.ToImmutableArray();
-            }
-
-            return completionItems.Concat(GetInheritedFieldItems(entity, reader, peReader)).ToImmutableArray();
-        }
-
-        private ImmutableArray<CompletionItem> GetInheritedFieldItems(EntityHandle entity, MetadataReader reader, PEReader peReader)
-        {
-            var ctx = ResolveEntityHandle(entity, reader, peReader);
-            if (ctx == null) return ImmutableArray<CompletionItem>.Empty;
-            reader = ctx.MetadataReader;
-
-            var typeDefFields = ctx.TypeDefinition.GetFields()
-                .Where(x => !IsBackingField(reader, x) && IsAccessibleFromDerived(reader, x));
-
-            var completionItems = BuildFieldCompletionItems(typeDefFields, reader).ToList();
-
-            var asmEntity = ctx.TypeDefinition.BaseType;
-
-            if (asmEntity.IsNil || asmEntity == null || asmEntity == default)
-            {
-                ctx.PEReader.Dispose();
-                return completionItems.ToImmutableArray();
-            }
-
-            return completionItems.Concat(GetInheritedFieldItems(asmEntity, reader, ctx.PEReader)).ToImmutableArray();
-        }
-
-        private ImmutableArray<CompletionItem> GetMethodItems(TypeDefinitionHandle handle, MetadataReader reader, PEReader peReader)
-        {
-            var typeDef = reader.GetTypeDefinition(handle);
-
-            var methodItems = typeDef.GetMethods().Where(x => !IsCtorOrExplicit(reader, x));
-
-            var completionItems = BuildMethodCompletionItems(methodItems, reader).ToList();
-
-            var entity = typeDef.BaseType;
-
-            if (entity.IsNil || entity == null || entity == default)
-            {
-                peReader.Dispose();
-                return completionItems.ToImmutableArray();
-            }
-
-            return completionItems.Concat(GetInheritedMethodItems(entity, reader, peReader)).ToImmutableArray();
-        }
-
-        private static EntityHandle? ResolveTypeSpecification(TypeSpecificationHandle typeSpecHandle, MetadataReader reader)
-        {
-            var typeSpec = reader.GetTypeSpecification(typeSpecHandle);
-
-            var blobReader = reader.GetBlobReader(typeSpec.Signature);
-            var signatureTypeCode = blobReader.ReadSignatureTypeCode();
-
-            if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
-            {
-                blobReader.ReadSignatureTypeCode();
-                var typeHandle = blobReader.ReadTypeHandle();
-
-                if (typeHandle == null || typeHandle.IsNil || typeHandle == default)
-                    return null;
-
-                return typeHandle;
-            }
-            else return null;
-        }
-
-        private IEnumerable<CompletionItem> BuildFieldCompletionItems(IEnumerable<FieldDefinitionHandle> typeDefFields, MetadataReader reader)
-        {
-            return typeDefFields.Select(fieldHandle =>
-            {
-                var fieldDef = reader.GetFieldDefinition(fieldHandle);
-                var fieldName = reader.GetString(fieldDef.Name);
-
-                var item = BuildCompletionItem(fieldName);
-
-                item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromField(reader, fieldHandle));
-
-                return item;
-            });
-        }
-
-        private IEnumerable<CompletionItem> BuildMethodCompletionItems(IEnumerable<MethodDefinitionHandle> typeDefMethods, MetadataReader reader)
-        {
-            return typeDefMethods.Select(methodHandle =>
-            {
-                var methodDef = reader.GetMethodDefinition(methodHandle);
-                var methodName = reader.GetString(methodDef.Name);
-
-                var item = BuildCompletionItem(methodName);
-
-                item.Properties.AddProperty("memberDef", MemberDefinitionInfoFactory.FromMethod(reader, methodHandle));
-
-                return item;
-            });
-        }
-
-        private ImmutableArray<CompletionItem> GetInheritedMethodItems(EntityHandle entity, MetadataReader reader, PEReader peReader)
-        {
-            var ctx = ResolveEntityHandle(entity, reader, peReader);
-            if (ctx == null) return ImmutableArray<CompletionItem>.Empty;
-            reader = ctx.MetadataReader;
-
-            var typeDefMethods = ctx.TypeDefinition.GetMethods()
-                .Where(x => !IsCtorOrExplicit(reader, x) && IsAccessibleFromDerived(reader, x));
-
-            var completionItems = BuildMethodCompletionItems(typeDefMethods, reader).ToList();
-
-            var asmEntity = ctx.TypeDefinition.BaseType;
-
-            if (asmEntity.IsNil || asmEntity == null || asmEntity == default)
-            {
-                ctx.PEReader.Dispose();
-                return completionItems.ToImmutableArray();
-            }
-
-            return completionItems.Concat(GetInheritedMethodItems(asmEntity, reader, ctx.PEReader)).ToImmutableArray();
-        }
-
-        private static TypeDefinitionHandle? FindTypeDefinition(MetadataReader reader, string name, string fullName)
-        {
-            foreach (var tdh in reader.TypeDefinitions)
-            {
-                var td = reader.GetTypeDefinition(tdh);
-                if (reader.GetString(td.Name) != name)
-                    continue;
-
-                if (BuildFullName(reader, tdh) == fullName)
-                    return tdh;
-            }
-
-            return null;
         }
 
         private CompletionItem BuildCompletionItem(string displayName)
@@ -418,53 +133,6 @@ namespace MemberLens
             return icon;
         }
 
-        private static string BuildFullName(MetadataReader reader, TypeDefinitionHandle handle)
-        {
-            var typeDef = reader.GetTypeDefinition(handle);
-            var name = reader.GetString(typeDef.Name);
-
-            var declaringHandle = typeDef.GetDeclaringType();
-            if (!declaringHandle.IsNil)
-            {
-                return BuildFullName(reader, declaringHandle) + "/" + name;
-            }
-
-            var ns = reader.GetString(typeDef.Namespace);
-            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
-        }
-
-        private static string BuildFullName(MetadataReader reader, TypeReferenceHandle handle)
-        {
-            var typeRef = reader.GetTypeReference(handle);
-            var name = reader.GetString(typeRef.Name);
-
-            if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
-            {
-                return BuildFullName(reader, (TypeReferenceHandle)typeRef.ResolutionScope) + "/" + name;
-            }
-
-            var ns = reader.GetString(typeRef.Namespace);
-            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
-        }
-
-        private static string BuildFullName(INamedTypeSymbol symbol)
-        {
-            var name = symbol.MetadataName;
-
-            if (symbol.ContainingType != null)
-            {
-                return BuildFullName(symbol.ContainingType) + "/" + name;
-            }
-
-            var cns = symbol.ContainingNamespace;
-            var ns = cns != null && !cns.IsGlobalNamespace
-                ? cns.ToDisplayString()
-                : null;
-
-
-            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
-        }
-
         private static ImmutableArray<CompletionItem> RebuildCachedItems(ImmutableArray<CompletionItem> cachedItems)
         {
             return cachedItems.Select(item =>
@@ -478,7 +146,7 @@ namespace MemberLens
                     insertText: item.InsertText,
                     sortText: item.SortText,
                     filterText: item.FilterText,
-                    attributeIcons: ImmutableArray<ImageElement>.Empty);
+                    attributeIcons: item.AttributeIcons);
 
                 var memberDef = item.Properties.GetProperty("memberDef");
                 refreshedItem.Properties.AddProperty("memberDef", memberDef);
@@ -488,6 +156,7 @@ namespace MemberLens
         }
 
         //TODO: Move everything related to this (below here) elsewhere
+        //TODO: This skips object, should stop as soon as anything in System or Microsoft
         public static IEnumerable<ISymbol> GetEffectiveMembers(INamedTypeSymbol type)
         {
             var emittedSignatures = new HashSet<string>();
@@ -560,23 +229,6 @@ namespace MemberLens
             }
 
             return symbol.ContainingType.SpecialType == SpecialType.System_Object;
-        }
-    }
-
-    internal class TypeDefinitionContext
-    {
-        public TypeDefinition TypeDefinition { get; }
-        public PEReader PEReader { get; }
-        public MetadataReader MetadataReader { get; }
-
-        public TypeDefinitionContext(
-            TypeDefinition typeDefinition,
-            PEReader pEReader,
-            MetadataReader metadataReader)
-        {
-            TypeDefinition = typeDefinition;
-            PEReader = pEReader;
-            MetadataReader = metadataReader;
         }
     }
 }

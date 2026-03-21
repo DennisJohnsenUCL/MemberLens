@@ -51,6 +51,8 @@
     <Compile Include="CompletionSymbolContext.cs" />
     <Compile Include="MemberAccessorCompletionSource.cs" />
     <Compile Include="MemberAccessorCompletionSourceProvider.cs" />
+    <Compile Include="MetadataMembers\MetadataMemberInfo.cs" />
+    <Compile Include="MetadataMembers\MetadataResolver.cs" />
     <Compile Include="MetadataTooltips\DisplayPart.cs" />
     <Compile Include="MetadataTooltips\GenericContext.cs" />
     <Compile Include="MetadataTooltips\MemberDefinitionInfo.cs" />
@@ -61,6 +63,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="MemberLensPackage.cs" />
     <Compile Include="SymbolTooltipBuilder.cs" />
+    <Compile Include="MetadataMembers\TypeDefinitionContext.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source.extension.vsixmanifest">
