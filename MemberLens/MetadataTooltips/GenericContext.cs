@@ -3,11 +3,6 @@ using System.Reflection.Metadata;
 
 namespace MemberLens
 {
-    /// <summary>
-    /// Context for resolving generic parameters. Holds the names of
-    /// type-level and method-level generic parameters so the decoder
-    /// can produce readable strings like "T" instead of "!0".
-    /// </summary>
     internal class GenericContext
     {
         public static readonly GenericContext Empty = new GenericContext(
@@ -25,9 +20,6 @@ namespace MemberLens
             MethodParameters = methodParameters;
         }
 
-        /// <summary>
-        /// Build a context from a TypeDefinition and optionally a MethodDefinition.
-        /// </summary>
         public static GenericContext Create(
             MetadataReader reader,
             TypeDefinitionHandle typeHandle,

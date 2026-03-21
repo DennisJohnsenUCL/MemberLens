@@ -14,136 +14,26 @@ namespace MemberLens
             var info = new MemberDefinitionInfo { Kind = MemberKind.Method };
 
             var declaringTypeHandle = methodDef.GetDeclaringType();
-            var declaringType = reader.GetTypeDefinition(declaringTypeHandle);
-            var declaringTypeName = reader.GetString(declaringType.Name);
-
-            // Strip generic arity from declaring type name
-            var backtick = declaringTypeName.IndexOf('`');
-            if (backtick > 0)
-                declaringTypeName = declaringTypeName.Substring(0, backtick);
-
+            var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var methodName = reader.GetString(methodDef.Name);
 
-            // Build generic context for resolving T, TResult, etc.
             var context = GenericContext.Create(reader, declaringTypeHandle, methodHandle);
             var provider = new SignatureTypeProvider(reader);
             var sig = methodDef.DecodeSignature(provider, context);
 
-            var typeParamNames = new HashSet<string>();
-            foreach (var tp in context.TypeParameters)
-                typeParamNames.Add(tp);
-            foreach (var mp in context.MethodParameters)
-                typeParamNames.Add(mp);
-            info.TypeParameterNames = typeParamNames;
+            info.TypeParameterNames = BuildTypeParameterNames(context);
 
-            // Modifiers
-            var methodAttrs = methodDef.Attributes;
+            AddMethodModifiers(info, methodDef.Attributes);
 
-            if ((methodAttrs & MethodAttributes.Static) != 0)
-                AddKeyword(info, "static");
+            AddTypePart(info, sig.ReturnType);
 
-            if ((methodAttrs & MethodAttributes.Abstract) != 0)
-                AddKeyword(info, "abstract");
-            else if ((methodAttrs & MethodAttributes.Final) != 0
-                     && (methodAttrs & MethodAttributes.Virtual) != 0
-                     && (methodAttrs & MethodAttributes.NewSlot) == 0)
-                AddKeyword(info, "sealed override");
-            else if ((methodAttrs & MethodAttributes.Virtual) != 0
-                     && (methodAttrs & MethodAttributes.NewSlot) != 0)
-                AddKeyword(info, "virtual");
-            else if ((methodAttrs & MethodAttributes.Virtual) != 0
-                     && (methodAttrs & MethodAttributes.NewSlot) == 0)
-                AddKeyword(info, "override");
+            AddDeclaringType(info, declaringTypeName, context);
 
-            // Return type — classify as keyword if it's a C# type keyword
-            var returnType = sig.ReturnType;
-            info.SignatureParts.Add(IsCSharpTypeKeyword(returnType)
-                ? DisplayPart.Keyword(returnType)
-                : DisplayPart.Type(returnType));
-            info.SignatureParts.Add(DisplayPart.Space());
-
-            // Declaring type (with generic params if any)
-            info.SignatureParts.Add(DisplayPart.Type(declaringTypeName));
-            if (context.TypeParameters.Length > 0)
-            {
-                info.SignatureParts.Add(DisplayPart.Punctuation("<"));
-                for (int i = 0; i < context.TypeParameters.Length; i++)
-                {
-                    if (i > 0)
-                    {
-                        info.SignatureParts.Add(DisplayPart.Punctuation(","));
-                        info.SignatureParts.Add(DisplayPart.Space());
-                    }
-                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.TypeParameters[i]));
-                }
-                info.SignatureParts.Add(DisplayPart.Punctuation(">"));
-            }
-
-            info.SignatureParts.Add(DisplayPart.Punctuation("."));
-
-            // Method name
             info.SignatureParts.Add(DisplayPart.MethodName(methodName));
 
-            // Method-level generic params (e.g. <TResult>)
-            if (context.MethodParameters.Length > 0)
-            {
-                info.SignatureParts.Add(DisplayPart.Punctuation("<"));
-                for (int i = 0; i < context.MethodParameters.Length; i++)
-                {
-                    if (i > 0)
-                    {
-                        info.SignatureParts.Add(DisplayPart.Punctuation(","));
-                        info.SignatureParts.Add(DisplayPart.Space());
-                    }
-                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.MethodParameters[i]));
-                }
-                info.SignatureParts.Add(DisplayPart.Punctuation(">"));
-            }
+            AddMethodTypeParameters(info, context);
 
-            // Parameters
-            info.SignatureParts.Add(DisplayPart.Punctuation("("));
-
-            var parameters = methodDef.GetParameters();
-            bool first = true;
-            foreach (var paramHandle in parameters)
-            {
-                var param = reader.GetParameter(paramHandle);
-
-                // SequenceNumber 0 is the return-type pseudo-parameter
-                if (param.SequenceNumber == 0)
-                    continue;
-
-                if (!first)
-                {
-                    info.SignatureParts.Add(DisplayPart.Punctuation(","));
-                    info.SignatureParts.Add(DisplayPart.Space());
-                }
-                first = false;
-
-                int paramIndex = param.SequenceNumber - 1;
-                if (paramIndex < sig.ParameterTypes.Length)
-                {
-                    var paramType = sig.ParameterTypes[paramIndex];
-                    // If it's a ref parameter, the type string starts with "ref "
-                    // — that "ref" is a keyword, not part of the type name
-                    if (paramType.StartsWith("ref "))
-                    {
-                        info.SignatureParts.Add(DisplayPart.Keyword("ref"));
-                        info.SignatureParts.Add(DisplayPart.Space());
-                        paramType = paramType.Substring(4);
-                    }
-
-                    info.SignatureParts.Add(IsCSharpTypeKeyword(paramType)
-                        ? DisplayPart.Keyword(paramType)
-                        : DisplayPart.Type(paramType));
-                    info.SignatureParts.Add(DisplayPart.Space());
-                }
-
-                info.SignatureParts.Add(
-                    DisplayPart.ParameterName(reader.GetString(param.Name)));
-            }
-
-            info.SignatureParts.Add(DisplayPart.Punctuation(")"));
+            AddMethodParameters(info, reader, methodDef, sig);
 
             return info;
         }
@@ -156,62 +46,21 @@ namespace MemberLens
             var info = new MemberDefinitionInfo { Kind = MemberKind.Field };
 
             var declaringTypeHandle = fieldDef.GetDeclaringType();
-            var declaringType = reader.GetTypeDefinition(declaringTypeHandle);
-            var declaringTypeName = reader.GetString(declaringType.Name);
-
-            var backtick = declaringTypeName.IndexOf('`');
-            if (backtick > 0)
-                declaringTypeName = declaringTypeName.Substring(0, backtick);
-
+            var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var fieldName = reader.GetString(fieldDef.Name);
 
             var context = GenericContext.Create(reader, declaringTypeHandle);
             var provider = new SignatureTypeProvider(reader);
             var fieldType = fieldDef.DecodeSignature(provider, context);
 
-            var typeParamNames = new HashSet<string>();
-            foreach (var tp in context.TypeParameters)
-                typeParamNames.Add(tp);
-            info.TypeParameterNames = typeParamNames;
+            info.TypeParameterNames = BuildTypeParameterNames(context);
 
-            // Modifiers
-            var fieldAttrs = fieldDef.Attributes;
+            AddFieldModifiers(info, fieldDef);
 
-            if ((fieldAttrs & FieldAttributes.Literal) != 0)
-                AddKeyword(info, "const");
-            else
-            {
-                if ((fieldAttrs & FieldAttributes.Static) != 0)
-                    AddKeyword(info, "static");
+            AddTypePart(info, fieldType);
 
-                if ((fieldAttrs & FieldAttributes.InitOnly) != 0)
-                    AddKeyword(info, "readonly");
-            }
+            AddDeclaringType(info, declaringTypeName, context);
 
-            // FieldType DeclaringType.FieldName
-            info.SignatureParts.Add(IsCSharpTypeKeyword(fieldType)
-                ? DisplayPart.Keyword(fieldType)
-                : DisplayPart.Type(fieldType));
-            info.SignatureParts.Add(DisplayPart.Space());
-
-            // Declaring type (with generic params if any)
-            info.SignatureParts.Add(DisplayPart.Type(declaringTypeName));
-            if (context.TypeParameters.Length > 0)
-            {
-                info.SignatureParts.Add(DisplayPart.Punctuation("<"));
-                for (int i = 0; i < context.TypeParameters.Length; i++)
-                {
-                    if (i > 0)
-                    {
-                        info.SignatureParts.Add(DisplayPart.Punctuation(","));
-                        info.SignatureParts.Add(DisplayPart.Space());
-                    }
-                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.TypeParameters[i]));
-                }
-                info.SignatureParts.Add(DisplayPart.Punctuation(">"));
-            }
-
-            info.SignatureParts.Add(DisplayPart.Punctuation("."));
             info.SignatureParts.Add(DisplayPart.FieldName(fieldName));
 
             return info;
@@ -224,61 +73,60 @@ namespace MemberLens
             var propertyDef = reader.GetPropertyDefinition(propertyHandle);
             var info = new MemberDefinitionInfo { Kind = MemberKind.Property };
 
-            // Properties don't directly expose a declaring type — we get it
-            // from the accessor method. Try getter first, then setter.
             var accessors = propertyDef.GetAccessors();
             var accessorHandle = !accessors.Getter.IsNil
                 ? accessors.Getter
                 : accessors.Setter;
 
             var accessorDef = reader.GetMethodDefinition(accessorHandle);
+
             var declaringTypeHandle = accessorDef.GetDeclaringType();
-            var declaringType = reader.GetTypeDefinition(declaringTypeHandle);
+            var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
+            var propertyName = reader.GetString(propertyDef.Name);
+
+            var context = GenericContext.Create(reader, declaringTypeHandle);
+            var provider = new SignatureTypeProvider(reader);
+            var sig = propertyDef.DecodeSignature(provider, context);
+
+            info.TypeParameterNames = BuildTypeParameterNames(context);
+
+            AddMethodModifiers(info, accessorDef.Attributes);
+
+            AddTypePart(info, sig.ReturnType);
+
+            AddDeclaringType(info, declaringTypeName, context);
+
+            info.SignatureParts.Add(DisplayPart.PropertyName(propertyName));
+
+            AddPropertyAccessorSummary(info, accessors);
+
+            return info;
+        }
+
+        private static string GetDeclaringTypeName(MetadataReader reader, TypeDefinitionHandle handle)
+        {
+            var declaringType = reader.GetTypeDefinition(handle);
             var declaringTypeName = reader.GetString(declaringType.Name);
 
             var backtick = declaringTypeName.IndexOf('`');
             if (backtick > 0)
                 declaringTypeName = declaringTypeName.Substring(0, backtick);
 
-            var propertyName = reader.GetString(propertyDef.Name);
+            return declaringTypeName;
+        }
 
-            // Decode the property signature for the property type
-            var context = GenericContext.Create(reader, declaringTypeHandle);
-            var provider = new SignatureTypeProvider(reader);
-            var sig = propertyDef.DecodeSignature(provider, context);
-
-            var typeParamNames = new HashSet<string>();
+        private static HashSet<string> BuildTypeParameterNames(GenericContext context)
+        {
+            var names = new HashSet<string>();
             foreach (var tp in context.TypeParameters)
-                typeParamNames.Add(tp);
-            info.TypeParameterNames = typeParamNames;
+                names.Add(tp);
+            foreach (var mp in context.MethodParameters)
+                names.Add(mp);
+            return names;
+        }
 
-            // Modifiers — derived from the accessor method attributes
-            var accessorAttrs = accessorDef.Attributes;
-
-            if ((accessorAttrs & MethodAttributes.Static) != 0)
-                AddKeyword(info, "static");
-
-            if ((accessorAttrs & MethodAttributes.Abstract) != 0)
-                AddKeyword(info, "abstract");
-            else if ((accessorAttrs & MethodAttributes.Final) != 0
-                     && (accessorAttrs & MethodAttributes.Virtual) != 0
-                     && (accessorAttrs & MethodAttributes.NewSlot) == 0)
-                AddKeyword(info, "sealed override");
-            else if ((accessorAttrs & MethodAttributes.Virtual) != 0
-                     && (accessorAttrs & MethodAttributes.NewSlot) != 0)
-                AddKeyword(info, "virtual");
-            else if ((accessorAttrs & MethodAttributes.Virtual) != 0
-                     && (accessorAttrs & MethodAttributes.NewSlot) == 0)
-                AddKeyword(info, "override");
-
-            // PropertyType DeclaringType.PropertyName { get; set; }
-            var propertyType = sig.ReturnType;
-            info.SignatureParts.Add(IsCSharpTypeKeyword(propertyType)
-                ? DisplayPart.Keyword(propertyType)
-                : DisplayPart.Type(propertyType));
-            info.SignatureParts.Add(DisplayPart.Space());
-
-            // Declaring type (with generic params if any)
+        private static void AddDeclaringType(MemberDefinitionInfo info, string declaringTypeName, GenericContext context)
+        {
             info.SignatureParts.Add(DisplayPart.Type(declaringTypeName));
             if (context.TypeParameters.Length > 0)
             {
@@ -294,37 +142,36 @@ namespace MemberLens
                 }
                 info.SignatureParts.Add(DisplayPart.Punctuation(">"));
             }
-
             info.SignatureParts.Add(DisplayPart.Punctuation("."));
-            info.SignatureParts.Add(DisplayPart.PropertyName(propertyName));
-
-            // { get; set; } accessor summary
-            info.SignatureParts.Add(DisplayPart.Space());
-            info.SignatureParts.Add(DisplayPart.Punctuation("{"));
-            info.SignatureParts.Add(DisplayPart.Space());
-
-            if (!accessors.Getter.IsNil)
-            {
-                info.SignatureParts.Add(DisplayPart.Keyword("get"));
-                info.SignatureParts.Add(DisplayPart.Punctuation(";"));
-                info.SignatureParts.Add(DisplayPart.Space());
-            }
-
-            if (!accessors.Setter.IsNil)
-            {
-                info.SignatureParts.Add(DisplayPart.Keyword("set"));
-                info.SignatureParts.Add(DisplayPart.Punctuation(";"));
-                info.SignatureParts.Add(DisplayPart.Space());
-            }
-
-            info.SignatureParts.Add(DisplayPart.Punctuation("}"));
-
-            return info;
         }
 
-        /// <summary>
-        /// Appends a keyword and trailing space to the signature parts.
-        /// </summary>
+        private static void AddMethodModifiers(MemberDefinitionInfo info, MethodAttributes attrs)
+        {
+            if ((attrs & MethodAttributes.Static) != 0)
+                AddKeyword(info, "static");
+
+            if ((attrs & MethodAttributes.Abstract) != 0)
+                AddKeyword(info, "abstract");
+            else if ((attrs & MethodAttributes.Final) != 0
+                     && (attrs & MethodAttributes.Virtual) != 0
+                     && (attrs & MethodAttributes.NewSlot) == 0)
+                AddKeyword(info, "sealed override");
+            else if ((attrs & MethodAttributes.Virtual) != 0
+                     && (attrs & MethodAttributes.NewSlot) != 0)
+                AddKeyword(info, "virtual");
+            else if ((attrs & MethodAttributes.Virtual) != 0
+                     && (attrs & MethodAttributes.NewSlot) == 0)
+                AddKeyword(info, "override");
+        }
+
+        private static void AddTypePart(MemberDefinitionInfo info, string typeName)
+        {
+            info.SignatureParts.Add(IsCSharpTypeKeyword(typeName)
+                ? DisplayPart.Keyword(typeName)
+                : DisplayPart.Type(typeName));
+            info.SignatureParts.Add(DisplayPart.Space());
+        }
+
         private static void AddKeyword(MemberDefinitionInfo info, string keyword)
         {
             info.SignatureParts.Add(DisplayPart.Keyword(keyword));
@@ -332,10 +179,6 @@ namespace MemberLens
         }
 
         //TODO: Move this somewhere more fitting
-        /// <summary>
-        /// Checks whether the type string is a C# keyword like int, string, etc.
-        /// so we can classify it as Keyword rather than Type in the tooltip.
-        /// </summary>
         internal static bool IsCSharpTypeKeyword(string typeName)
         {
             switch (typeName)
@@ -362,6 +205,105 @@ namespace MemberLens
                 default:
                     return false;
             }
+        }
+
+        private static void AddMethodTypeParameters(MemberDefinitionInfo info, GenericContext context)
+        {
+            if (context.MethodParameters.Length > 0)
+            {
+                info.SignatureParts.Add(DisplayPart.Punctuation("<"));
+                for (int i = 0; i < context.MethodParameters.Length; i++)
+                {
+                    if (i > 0)
+                    {
+                        info.SignatureParts.Add(DisplayPart.Punctuation(","));
+                        info.SignatureParts.Add(DisplayPart.Space());
+                    }
+                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.MethodParameters[i]));
+                }
+                info.SignatureParts.Add(DisplayPart.Punctuation(">"));
+            }
+        }
+
+        private static void AddMethodParameters(MemberDefinitionInfo info, MetadataReader reader, MethodDefinition methodDef, MethodSignature<string> sig)
+        {
+            info.SignatureParts.Add(DisplayPart.Punctuation("("));
+
+            var parameters = methodDef.GetParameters();
+            bool first = true;
+            foreach (var paramHandle in parameters)
+            {
+                var param = reader.GetParameter(paramHandle);
+
+                if (param.SequenceNumber == 0)
+                    continue;
+
+                if (!first)
+                {
+                    info.SignatureParts.Add(DisplayPart.Punctuation(","));
+                    info.SignatureParts.Add(DisplayPart.Space());
+                }
+                first = false;
+
+                int paramIndex = param.SequenceNumber - 1;
+                if (paramIndex < sig.ParameterTypes.Length)
+                {
+                    var paramType = sig.ParameterTypes[paramIndex];
+
+                    if (paramType.StartsWith("ref "))
+                    {
+                        info.SignatureParts.Add(DisplayPart.Keyword("ref"));
+                        info.SignatureParts.Add(DisplayPart.Space());
+                        paramType = paramType.Substring(4);
+                    }
+
+                    AddTypePart(info, paramType);
+                }
+
+                info.SignatureParts.Add(
+                    DisplayPart.ParameterName(reader.GetString(param.Name)));
+            }
+
+            info.SignatureParts.Add(DisplayPart.Punctuation(")"));
+        }
+
+        private static void AddFieldModifiers(MemberDefinitionInfo info, FieldDefinition fieldDef)
+        {
+            var fieldAttrs = fieldDef.Attributes;
+
+            if ((fieldAttrs & FieldAttributes.Literal) != 0)
+                AddKeyword(info, "const");
+            else
+            {
+                if ((fieldAttrs & FieldAttributes.Static) != 0)
+                    AddKeyword(info, "static");
+
+                if ((fieldAttrs & FieldAttributes.InitOnly) != 0)
+                    AddKeyword(info, "readonly");
+            }
+        }
+
+        private static void AddPropertyAccessorSummary(MemberDefinitionInfo info, PropertyAccessors accessors)
+        {
+            info.SignatureParts.Add(DisplayPart.Space());
+            info.SignatureParts.Add(DisplayPart.Punctuation("{"));
+            info.SignatureParts.Add(DisplayPart.Space());
+
+            if (!accessors.Getter.IsNil)
+            {
+                info.SignatureParts.Add(DisplayPart.Keyword("get"));
+                info.SignatureParts.Add(DisplayPart.Punctuation(";"));
+                info.SignatureParts.Add(DisplayPart.Space());
+            }
+
+            if (!accessors.Setter.IsNil)
+            {
+                info.SignatureParts.Add(DisplayPart.Keyword("set"));
+                info.SignatureParts.Add(DisplayPart.Punctuation(";"));
+                info.SignatureParts.Add(DisplayPart.Space());
+            }
+
+            info.SignatureParts.Add(DisplayPart.Punctuation("}"));
         }
     }
 }

@@ -2,9 +2,6 @@
 
 namespace MemberLens
 {
-    /// <summary>
-    /// A single classified chunk of display text, mirroring Roslyn's SymbolDisplayPart.
-    /// </summary>
     internal readonly struct DisplayPart
     {
         public SymbolDisplayPartKind Kind { get; }
@@ -15,8 +12,6 @@ namespace MemberLens
             Kind = kind;
             Text = text;
         }
-
-        // Convenience factory methods to keep call sites readable.
 
         public static DisplayPart Keyword(string text) =>
             new DisplayPart(SymbolDisplayPartKind.Keyword, text);
@@ -38,9 +33,6 @@ namespace MemberLens
 
         public static DisplayPart ParameterName(string text) =>
             new DisplayPart(SymbolDisplayPartKind.ParameterName, text);
-
-        public static DisplayPart Plain(string text) =>
-            new DisplayPart(SymbolDisplayPartKind.Text, text);
 
         public static DisplayPart FieldName(string text) =>
             new DisplayPart(SymbolDisplayPartKind.FieldName, text);

@@ -4,12 +4,6 @@ using System.Reflection.Metadata;
 
 namespace MemberLens
 {
-    /// <summary>
-    /// Implements ISignatureTypeProvider to decode metadata signatures into
-    /// human-readable C#-style display strings (e.g. "int", "List&lt;T&gt;",
-    /// "string[]"). Used with MethodDefinition.DecodeSignature and
-    /// FieldDefinition.DecodeSignature.
-    /// </summary>
     internal class SignatureTypeProvider : ISignatureTypeProvider<string, GenericContext>
     {
         private readonly MetadataReader _reader;

@@ -22,9 +22,6 @@ namespace MemberLens
 
             foreach (var part in info.SignatureParts)
             {
-                // Type-classified parts may contain embedded keywords
-                // inside generic types, e.g. "Dictionary<string, int>".
-                // Split them into properly classified runs.
                 if (part.Kind == SymbolDisplayPartKind.ClassName)
                     AddClassifiedTypeRuns(runs, part.Text, info.TypeParameterNames);
                 else
@@ -48,12 +45,6 @@ namespace MemberLens
                 elements);
         }
 
-        /// <summary>
-        /// Tokenizes a type string like "Dictionary<string, int>" into
-        /// classified runs: type names get Type classification, C# keywords
-        /// like "int" get Keyword, type parameters like "T" get TypeParameterName,
-        /// and punctuation (&lt; &gt; , [] ? *) gets Punctuation.
-        /// </summary>
         private static void AddClassifiedTypeRuns(
             List<ClassifiedTextRun> runs, string text, HashSet<string> typeParameterNames)
         {
@@ -79,7 +70,6 @@ namespace MemberLens
                 }
                 else
                 {
-                    // Read an identifier token
                     int start = i;
                     while (i < text.Length && text[i] != '<' && text[i] != '>'
                         && text[i] != ',' && text[i] != ' ' && text[i] != '['
@@ -90,8 +80,6 @@ namespace MemberLens
 
                     var token = text.Substring(start, i - start);
 
-                    // Strip namespace prefix (e.g. "System.Collections.Generic.Dictionary" → "Dictionary")
-                    // Dots are part of the token since they aren't break characters.
                     var lastDot = token.LastIndexOf('.');
                     if (lastDot >= 0)
                         token = token.Substring(lastDot + 1);
