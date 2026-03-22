@@ -34,7 +34,7 @@ namespace MemberLens.SourceMembers
             _source = source;
 
             _icon = GetIcon();
-            _resolver = new MetadataResolver(compilation, _accessorType, _sourceType);
+            _resolver = new MetadataResolver(compilation, _accessorType);
         }
 
         public IEnumerable<CompletionItem> Build()
@@ -48,14 +48,16 @@ namespace MemberLens.SourceMembers
 
             else if (_sourceType.Locations[0].IsInMetadata)
             {
-                if (_itemCache.TryGetValue(_resolver.RootKey, out var cachedItems))
+                var rootKey = _resolver.GetRootKey(_sourceType);
+
+                if (_itemCache.TryGetValue(rootKey, out var cachedItems))
                     return RebuildCachedItems(cachedItems);
 
-                var memberInfos = _resolver.GetMetadataMemberInfos();
+                var memberInfos = _resolver.GetMetadataMemberInfos(_sourceType, root: true);
                 var completionItems = BuildMemberCompletionItems(memberInfos);
 
-                if (!_itemCache.ContainsKey(_resolver.RootKey))
-                    _itemCache.Add(_resolver.RootKey, completionItems);
+                if (!_itemCache.ContainsKey(rootKey))
+                    _itemCache.Add(rootKey, completionItems);
 
                 return completionItems;
             }
@@ -98,7 +100,13 @@ namespace MemberLens.SourceMembers
             if (MemberHelper.IsCoreLibAssembly(baseSymbol.ContainingNamespace.ToDisplayString()))
                 return fieldMemberInfos;
 
-            return fieldMemberInfos.Concat(GetFieldMemberInfos(baseSymbol, root: false));
+            if (baseSymbol.Locations[0].IsInSource)
+                return fieldMemberInfos.Concat(GetFieldMemberInfos(baseSymbol, root: false));
+
+            if (baseSymbol.Locations[0].IsInMetadata)
+                return fieldMemberInfos.Concat(_resolver.GetMetadataMemberInfos(baseSymbol, root: false));
+
+            return fieldMemberInfos;
         }
 
         private IEnumerable<SourceMemberInfo> GetMethodMemberInfos(INamedTypeSymbol symbol, bool root)
@@ -113,7 +121,13 @@ namespace MemberLens.SourceMembers
             if (MemberHelper.IsCoreLibAssembly(baseSymbol.ContainingNamespace.ToDisplayString()))
                 return methodMemberInfos;
 
-            return methodMemberInfos.Concat(GetMethodMemberInfos(baseSymbol, root: false));
+            if (baseSymbol.Locations[0].IsInSource)
+                return methodMemberInfos.Concat(GetMethodMemberInfos(baseSymbol, root: false));
+
+            if (baseSymbol.Locations[0].IsInMetadata)
+                return methodMemberInfos.Concat(_resolver.GetMetadataMemberInfos(baseSymbol, root: false));
+
+            return methodMemberInfos;
         }
 
         private bool IsAccessibleFromDerived(ISymbol symbol)

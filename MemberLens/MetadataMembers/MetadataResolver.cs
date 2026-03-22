@@ -15,28 +15,24 @@ namespace MemberLens.MetadataMembers
     {
         private readonly Compilation _compilation;
         private readonly AccessorType _accessorType;
-        private readonly INamedTypeSymbol _symbol;
-
-        public string RootKey { get; }
 
         private readonly MetadataCrawler _crawler;
 
-        public MetadataResolver(Compilation compilation, AccessorType accessorType, INamedTypeSymbol symbol)
+        public MetadataResolver(Compilation compilation, AccessorType accessorType)
         {
             _compilation = compilation;
             _accessorType = accessorType;
-            _symbol = symbol;
-
-            RootKey = BuildFullName(symbol) + _accessorType.ToString();
 
             _crawler = new MetadataCrawler(_compilation);
         }
 
-        public IEnumerable<SourceMemberInfo> GetMetadataMemberInfos()
-        {
-            var sourceFullName = BuildFullName(_symbol);
+        public string GetRootKey(INamedTypeSymbol symbol) => BuildFullName(symbol) + _accessorType.ToString();
 
-            var assembly = _symbol.ContainingAssembly;
+        public IEnumerable<SourceMemberInfo> GetMetadataMemberInfos(INamedTypeSymbol symbol, bool root)
+        {
+            var sourceFullName = BuildFullName(symbol);
+
+            var assembly = symbol.ContainingAssembly;
 
             if (MemberHelper.IsCoreLibAssembly(assembly.Name)) return null;
 
@@ -50,24 +46,24 @@ namespace MemberLens.MetadataMembers
             var peReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata);
             var mdReader = peReader.GetMetadataReader();
 
-            var match = MetadataHelper.FindTypeDefinition(mdReader, _symbol.MetadataName, sourceFullName);
+            var match = MetadataHelper.FindTypeDefinition(mdReader, symbol.MetadataName, sourceFullName);
             if (match == null || match.Value.IsNil || match.Value == default) return null;
 
             var ctx = new TypeDefinitionContext(mdReader.GetTypeDefinition(match.Value), peReader, mdReader);
 
             IEnumerable<SourceMemberInfo> items;
             if (_accessorType == AccessorType.Field)
-                items = GetFieldInfos(ctx, root: true);
+                items = GetFieldInfos(ctx, root);
 
             else if (_accessorType == AccessorType.Method)
-                items = GetMethodInfos(ctx, root: true);
+                items = GetMethodInfos(ctx, root);
 
             else return null;
 
             return items;
         }
 
-        private IEnumerable<SourceMemberInfo> GetFieldInfos(TypeDefinitionContext ctx, bool root = false)
+        private IEnumerable<SourceMemberInfo> GetFieldInfos(TypeDefinitionContext ctx, bool root)
         {
             var memberInfos = ctx.TypeDefinition.GetFields()
                 .Where(x => !IsBackingField(ctx.MetadataReader, x) && (root || IsAccessibleFromDerived(ctx.MetadataReader, x)))
@@ -82,10 +78,10 @@ namespace MemberLens.MetadataMembers
             var baseCtx = _crawler.GetBaseType(ctx);
             if (baseCtx == null) return memberInfos;
 
-            return memberInfos.Concat(GetFieldInfos(baseCtx));
+            return memberInfos.Concat(GetFieldInfos(baseCtx, root: false));
         }
 
-        private IEnumerable<SourceMemberInfo> GetMethodInfos(TypeDefinitionContext ctx, bool root = false)
+        private IEnumerable<SourceMemberInfo> GetMethodInfos(TypeDefinitionContext ctx, bool root)
         {
             var memberInfos = ctx.TypeDefinition.GetMethods()
                 .Where(x => !IsCtorOrExplicit(ctx.MetadataReader, x) && (root || IsAccessibleFromDerived(ctx.MetadataReader, x)))
@@ -100,7 +96,7 @@ namespace MemberLens.MetadataMembers
             var baseCtx = _crawler.GetBaseType(ctx);
             if (baseCtx == null) return memberInfos;
 
-            return memberInfos.Concat(GetMethodInfos(baseCtx));
+            return memberInfos.Concat(GetMethodInfos(baseCtx, root: false));
         }
 
         private static string BuildFullName(INamedTypeSymbol symbol)
