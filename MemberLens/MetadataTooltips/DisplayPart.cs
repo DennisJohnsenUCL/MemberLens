@@ -1,6 +1,6 @@
 ﻿using Microsoft.CodeAnalysis;
 
-namespace MemberLens
+namespace MemberLens.MetadataTooltips
 {
     internal readonly struct DisplayPart
     {

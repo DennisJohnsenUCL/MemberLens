@@ -1,7 +1,10 @@
-﻿using System.Linq;
+﻿using System.Collections.Immutable;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MemberLens.Attributes;
+using MemberLens.MetadataTooltips;
+using MemberLens.SourceMembers;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.VisualStudio.Language.Intellisense.AsyncCompletion;
@@ -34,16 +37,19 @@ namespace MemberLens
             var completionItems = new CompletionItemBuilder(sourceType, accessorType, this, symCtx.Compilation).Build();
             if (completionItems == null) return Empty;
 
-            var completionContext = new CompletionContext(completionItems.Value);
+            var completionContext = new CompletionContext(completionItems.ToImmutableArray());
             return completionContext;
         }
 
         public async Task<object> GetDescriptionAsync(IAsyncCompletionSession session, CompletionItem item, CancellationToken token)
         {
-            if (item.Properties.TryGetProperty("symbol", out ISymbol symbol))
+            if (!item.Properties.TryGetProperty("tooltipSource", out object tooltipSource))
+                return string.Empty;
+
+            if (tooltipSource is ISymbol symbol)
                 return SymbolTooltipBuilder.Build(symbol, token);
 
-            if (item.Properties.TryGetProperty("memberDef", out MemberDefinitionInfo memberDef))
+            if (tooltipSource is MemberDefinitionInfo memberDef)
                 return MetadataTooltipBuilder.Build(memberDef);
 
             return string.Empty;

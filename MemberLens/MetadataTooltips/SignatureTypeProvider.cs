@@ -2,7 +2,7 @@
 using System.Collections.Immutable;
 using System.Reflection.Metadata;
 
-namespace MemberLens
+namespace MemberLens.MetadataTooltips
 {
     internal class SignatureTypeProvider : ISignatureTypeProvider<string, GenericContext>
     {

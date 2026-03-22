@@ -2,7 +2,7 @@
 using System.Reflection;
 using System.Reflection.Metadata;
 
-namespace MemberLens
+namespace MemberLens.MetadataTooltips
 {
     internal static class MemberDefinitionInfoFactory
     {
@@ -166,7 +166,7 @@ namespace MemberLens
 
         private static void AddTypePart(MemberDefinitionInfo info, string typeName)
         {
-            info.SignatureParts.Add(IsCSharpTypeKeyword(typeName)
+            info.SignatureParts.Add(MetadataTooltipHelper.IsCSharpTypeKeyword(typeName)
                 ? DisplayPart.Keyword(typeName)
                 : DisplayPart.Type(typeName));
             info.SignatureParts.Add(DisplayPart.Space());
@@ -176,35 +176,6 @@ namespace MemberLens
         {
             info.SignatureParts.Add(DisplayPart.Keyword(keyword));
             info.SignatureParts.Add(DisplayPart.Space());
-        }
-
-        //TODO: Move this somewhere more fitting
-        internal static bool IsCSharpTypeKeyword(string typeName)
-        {
-            switch (typeName)
-            {
-                case "bool":
-                case "byte":
-                case "sbyte":
-                case "char":
-                case "short":
-                case "ushort":
-                case "int":
-                case "uint":
-                case "long":
-                case "ulong":
-                case "float":
-                case "double":
-                case "decimal":
-                case "string":
-                case "object":
-                case "void":
-                case "nint":
-                case "nuint":
-                    return true;
-                default:
-                    return false;
-            }
         }
 
         private static void AddMethodTypeParameters(MemberDefinitionInfo info, GenericContext context)

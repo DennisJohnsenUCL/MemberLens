@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.Language.StandardClassification;
 using Microsoft.VisualStudio.Text.Adornments;
 
-namespace MemberLens
+namespace MemberLens.MetadataTooltips
 {
     internal static class MetadataTooltipBuilder
     {
@@ -84,7 +84,7 @@ namespace MemberLens
                     if (lastDot >= 0)
                         token = token.Substring(lastDot + 1);
 
-                    if (MemberDefinitionInfoFactory.IsCSharpTypeKeyword(token))
+                    if (MetadataTooltipHelper.IsCSharpTypeKeyword(token))
                         runs.Add(new ClassifiedTextRun(
                             PredefinedClassificationTypeNames.Keyword, token));
                     else if (typeParameterNames != null && typeParameterNames.Contains(token))

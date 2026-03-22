@@ -4,11 +4,6 @@ namespace MemberLens.MetadataMembers
 {
     internal static class MetadataHelper
     {
-        public static bool IsCoreLibAssembly(string assemblyName)
-        {
-            return assemblyName.StartsWith("System.") || assemblyName.StartsWith("Microsoft.");
-        }
-
         public static TypeDefinitionHandle? FindTypeDefinition(MetadataReader reader, string name, string fullName)
         {
             foreach (var tdh in reader.TypeDefinitions)

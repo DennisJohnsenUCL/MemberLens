@@ -46,14 +46,15 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ClassificationHelper.cs" />
-    <Compile Include="CompletionItemBuilder.cs" />
+    <Compile Include="SourceMembers\CompletionItemBuilder.cs" />
     <Compile Include="CompletionSourceHelper.cs" />
     <Compile Include="CompletionSymbolContext.cs" />
     <Compile Include="MemberAccessorCompletionSource.cs" />
     <Compile Include="MemberAccessorCompletionSourceProvider.cs" />
+    <Compile Include="SourceMembers\MemberHelper.cs" />
     <Compile Include="MetadataMembers\MetadataCrawler.cs" />
     <Compile Include="MetadataMembers\MetadataHelper.cs" />
-    <Compile Include="MetadataMembers\MetadataMemberInfo.cs" />
+    <Compile Include="SourceMembers\SourceMemberInfo.cs" />
     <Compile Include="MetadataMembers\MetadataResolver.cs" />
     <Compile Include="MetadataTooltips\DisplayPart.cs" />
     <Compile Include="MetadataTooltips\GenericContext.cs" />
@@ -61,6 +62,7 @@
     <Compile Include="MetadataTooltips\MemberDefinitionInfoFactory.cs" />
     <Compile Include="MetadataTooltips\MemberKind.cs" />
     <Compile Include="MetadataTooltips\MetadataTooltipBuilder.cs" />
+    <Compile Include="MetadataTooltips\MetadataTooltipHelper.cs" />
     <Compile Include="MetadataTooltips\SignatureTypeProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="MemberLensPackage.cs" />

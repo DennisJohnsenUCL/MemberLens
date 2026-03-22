@@ -1,4 +1,4 @@
-﻿namespace MemberLens
+﻿namespace MemberLens.MetadataTooltips
 {
     internal enum MemberKind
     {

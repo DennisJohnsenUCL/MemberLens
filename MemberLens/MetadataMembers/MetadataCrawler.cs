@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+using MemberLens.SourceMembers;
 using Microsoft.CodeAnalysis;
 
 namespace MemberLens.MetadataMembers
@@ -94,7 +95,7 @@ namespace MemberLens.MetadataMembers
             var asmRef = mdReader.GetAssemblyReference(asmRefHandle);
             var asmName = mdReader.GetString(asmRef.Name);
 
-            if (MetadataHelper.IsCoreLibAssembly(asmName)) return NoContext();
+            if (MemberHelper.IsCoreLibAssembly(asmName)) return NoContext();
 
             var metadataRef = _compilation.References
                 .OfType<PortableExecutableReference>()

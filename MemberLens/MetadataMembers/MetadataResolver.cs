@@ -5,6 +5,8 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using MemberLens.Attributes;
+using MemberLens.MetadataTooltips;
+using MemberLens.SourceMembers;
 using Microsoft.CodeAnalysis;
 
 namespace MemberLens.MetadataMembers
@@ -30,13 +32,13 @@ namespace MemberLens.MetadataMembers
             _crawler = new MetadataCrawler(_compilation);
         }
 
-        public IEnumerable<MetadataMemberInfo> GetMetadataMemberInfos()
+        public IEnumerable<SourceMemberInfo> GetMetadataMemberInfos()
         {
             var sourceFullName = BuildFullName(_symbol);
 
             var assembly = _symbol.ContainingAssembly;
 
-            if (MetadataHelper.IsCoreLibAssembly(assembly.Name)) return null;
+            if (MemberHelper.IsCoreLibAssembly(assembly.Name)) return null;
 
             if (!(_compilation.GetMetadataReference(
                 assembly) is PortableExecutableReference reference)) return null;
@@ -53,7 +55,7 @@ namespace MemberLens.MetadataMembers
 
             var ctx = new TypeDefinitionContext(mdReader.GetTypeDefinition(match.Value), peReader, mdReader);
 
-            IEnumerable<MetadataMemberInfo> items;
+            IEnumerable<SourceMemberInfo> items;
             if (_accessorType == AccessorType.Field)
                 items = GetFieldInfos(ctx, root: true);
 
@@ -65,7 +67,7 @@ namespace MemberLens.MetadataMembers
             return items;
         }
 
-        private IEnumerable<MetadataMemberInfo> GetFieldInfos(TypeDefinitionContext ctx, bool root = false)
+        private IEnumerable<SourceMemberInfo> GetFieldInfos(TypeDefinitionContext ctx, bool root = false)
         {
             var memberInfos = ctx.TypeDefinition.GetFields()
                 .Where(x => !IsBackingField(ctx.MetadataReader, x) && (root || IsAccessibleFromDerived(ctx.MetadataReader, x)))
@@ -73,7 +75,7 @@ namespace MemberLens.MetadataMembers
                 {
                     var fieldDef = ctx.MetadataReader.GetFieldDefinition(fieldHandle);
                     var fieldName = ctx.MetadataReader.GetString(fieldDef.Name);
-                    return new MetadataMemberInfo(fieldName, MemberDefinitionInfoFactory.FromField(ctx.MetadataReader, fieldHandle));
+                    return new SourceMemberInfo(fieldName, MemberDefinitionInfoFactory.FromField(ctx.MetadataReader, fieldHandle));
                 })
                 .ToList();
 
@@ -83,7 +85,7 @@ namespace MemberLens.MetadataMembers
             return memberInfos.Concat(GetFieldInfos(baseCtx));
         }
 
-        private IEnumerable<MetadataMemberInfo> GetMethodInfos(TypeDefinitionContext ctx, bool root = false)
+        private IEnumerable<SourceMemberInfo> GetMethodInfos(TypeDefinitionContext ctx, bool root = false)
         {
             var memberInfos = ctx.TypeDefinition.GetMethods()
                 .Where(x => !IsCtorOrExplicit(ctx.MetadataReader, x) && (root || IsAccessibleFromDerived(ctx.MetadataReader, x)))
@@ -91,7 +93,7 @@ namespace MemberLens.MetadataMembers
                 {
                     var methodDef = ctx.MetadataReader.GetMethodDefinition(methodHandle);
                     var methodName = ctx.MetadataReader.GetString(methodDef.Name);
-                    return new MetadataMemberInfo(methodName, MemberDefinitionInfoFactory.FromMethod(ctx.MetadataReader, methodHandle));
+                    return new SourceMemberInfo(methodName, MemberDefinitionInfoFactory.FromMethod(ctx.MetadataReader, methodHandle));
                 })
                 .ToList();
 
@@ -121,7 +123,7 @@ namespace MemberLens.MetadataMembers
         private static bool IsBackingField(MetadataReader reader, FieldDefinitionHandle handle)
         {
             var name = reader.GetString(reader.GetFieldDefinition(handle).Name);
-            return name.StartsWith("<") && name.EndsWith(">k__BackingField");
+            return MemberHelper.IsBackingField(name);
         }
 
         private static bool IsAccessibleFromDerived(MetadataReader reader, FieldDefinitionHandle handle)
@@ -139,7 +141,7 @@ namespace MemberLens.MetadataMembers
         private static bool IsCtorOrExplicit(MetadataReader reader, MethodDefinitionHandle handle)
         {
             var name = reader.GetString(reader.GetMethodDefinition(handle).Name);
-            return name == ".ctor" || name.Contains(".");
+            return MemberHelper.IsCtorOrExplicit(name);
         }
     }
 }
