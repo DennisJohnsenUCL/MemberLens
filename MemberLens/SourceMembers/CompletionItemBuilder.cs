@@ -21,7 +21,8 @@ namespace MemberLens.SourceMembers
         private readonly MemberAccessorCompletionSource _source;
 
         private readonly ImageElement _icon;
-        private readonly MetadataResolver _resolver;
+        private readonly MetadataResolver _metadataResolver;
+        private readonly SymbolResolver _sourceResolver;
 
         public CompletionItemBuilder(
             INamedTypeSymbol sourceType,
@@ -34,26 +35,27 @@ namespace MemberLens.SourceMembers
             _source = source;
 
             _icon = GetIcon();
-            _resolver = new MetadataResolver(compilation, _accessorType);
+            _metadataResolver = new MetadataResolver(compilation, _accessorType);
+            _sourceResolver = new SymbolResolver(_accessorType, _metadataResolver);
         }
 
         public IEnumerable<CompletionItem> Build()
         {
             if (_sourceType.Locations[0].IsInSource)
             {
-                var memberInfos = GetSourceMemberInfos();
+                var memberInfos = _sourceResolver.GetSourceMemberInfos(_sourceType, root: true);
 
                 return BuildMemberCompletionItems(memberInfos);
             }
 
             else if (_sourceType.Locations[0].IsInMetadata)
             {
-                var rootKey = _resolver.GetRootKey(_sourceType);
+                var rootKey = _metadataResolver.GetRootKey(_sourceType);
 
                 if (_itemCache.TryGetValue(rootKey, out var cachedItems))
                     return RebuildCachedItems(cachedItems);
 
-                var memberInfos = _resolver.GetMetadataMemberInfos(_sourceType, root: true);
+                var memberInfos = _metadataResolver.GetMetadataMemberInfos(_sourceType, root: true);
                 var completionItems = BuildMemberCompletionItems(memberInfos);
 
                 if (!_itemCache.ContainsKey(rootKey))
@@ -73,78 +75,6 @@ namespace MemberLens.SourceMembers
                 item.Properties.AddProperty("tooltipSource", x.TooltipSource);
                 return item;
             });
-        }
-
-        private IEnumerable<SourceMemberInfo> GetSourceMemberInfos()
-        {
-            if (_accessorType == AccessorType.Field)
-            {
-                return GetFieldMemberInfos(_sourceType, root: true);
-            }
-            else if (_accessorType == AccessorType.Method)
-            {
-                return GetMethodMemberInfos(_sourceType, root: true);
-            }
-            else return null;
-        }
-
-        private IEnumerable<SourceMemberInfo> GetFieldMemberInfos(INamedTypeSymbol symbol, bool root)
-        {
-            var fieldMemberInfos = symbol.GetMembers()
-                .OfType<IFieldSymbol>()
-                .Where(x => !IsBackingField(x) && (root || IsAccessibleFromDerived(x)))
-                .Select(x => new SourceMemberInfo(x.Name, x));
-
-            var baseSymbol = symbol.BaseType;
-            if (baseSymbol == null) return fieldMemberInfos;
-            if (MemberHelper.IsCoreLibAssembly(baseSymbol.ContainingNamespace.ToDisplayString()))
-                return fieldMemberInfos;
-
-            if (baseSymbol.Locations[0].IsInSource)
-                return fieldMemberInfos.Concat(GetFieldMemberInfos(baseSymbol, root: false));
-
-            if (baseSymbol.Locations[0].IsInMetadata)
-                return fieldMemberInfos.Concat(_resolver.GetMetadataMemberInfos(baseSymbol, root: false));
-
-            return fieldMemberInfos;
-        }
-
-        private IEnumerable<SourceMemberInfo> GetMethodMemberInfos(INamedTypeSymbol symbol, bool root)
-        {
-            var methodMemberInfos = symbol.GetMembers()
-                .OfType<IMethodSymbol>()
-                .Where(x => !IsCtorOrExplicit(x) && (root || IsAccessibleFromDerived(x)))
-                .Select(x => new SourceMemberInfo(x.Name, x));
-
-            var baseSymbol = symbol.BaseType;
-            if (baseSymbol == null) return methodMemberInfos;
-            if (MemberHelper.IsCoreLibAssembly(baseSymbol.ContainingNamespace.ToDisplayString()))
-                return methodMemberInfos;
-
-            if (baseSymbol.Locations[0].IsInSource)
-                return methodMemberInfos.Concat(GetMethodMemberInfos(baseSymbol, root: false));
-
-            if (baseSymbol.Locations[0].IsInMetadata)
-                return methodMemberInfos.Concat(_resolver.GetMetadataMemberInfos(baseSymbol, root: false));
-
-            return methodMemberInfos;
-        }
-
-        private bool IsAccessibleFromDerived(ISymbol symbol)
-        {
-            return symbol.DeclaredAccessibility != Accessibility.Private;
-        }
-
-        private bool IsBackingField(IFieldSymbol symbol)
-        {
-            var name = symbol.Name;
-            return MemberHelper.IsBackingField(name);
-        }
-
-        private bool IsCtorOrExplicit(IMethodSymbol symbol)
-        {
-            var name = symbol.Name;
-            return MemberHelper.IsCtorOrExplicit(name);
         }
 
         private CompletionItem BuildCompletionItem(string displayName)

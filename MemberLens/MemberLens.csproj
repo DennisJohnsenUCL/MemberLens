@@ -66,6 +66,7 @@
     <Compile Include="MetadataTooltips\SignatureTypeProvider.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="MemberLensPackage.cs" />
+    <Compile Include="SymbolResolver.cs" />
     <Compile Include="SymbolTooltipBuilder.cs" />
     <Compile Include="MetadataMembers\TypeDefinitionContext.cs" />
   </ItemGroup>
