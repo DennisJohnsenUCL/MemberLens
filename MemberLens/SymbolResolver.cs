@@ -1,5 +1,4 @@
 ﻿using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using MemberLens.Attributes;
 using MemberLens.MemberSignatures;
@@ -37,13 +36,9 @@ namespace MemberLens
         {
             var fieldMemberInfos = symbol.GetMembers()
                 .OfType<IFieldSymbol>()
-                .Where(x => !IsBackingField(x) && (root || IsAccessibleFromDerived(x)))
-                .Select(x =>
-                {
-                    //TODO: Remove
-                    Debug.WriteLine("Symbol   " + sigCtx.GetSymbolSignature(x));
-                    return new SourceMemberInfo(x.Name, x);
-                });
+                .Where(x => ShouldIncludeField(x, root, sigCtx))
+                .Select(x => new SourceMemberInfo(x.Name, x))
+                .ToArray();
 
             var baseSymbol = symbol.BaseType;
             if (baseSymbol == null) return fieldMemberInfos;
@@ -66,13 +61,9 @@ namespace MemberLens
         {
             var methodMemberInfos = symbol.GetMembers()
                 .OfType<IMethodSymbol>()
-                .Where(x => !IsCtorOrExplicit(x) && (root || IsAccessibleFromDerived(x)))
-                .Select(x =>
-                {
-                    //TODO: Remove
-                    Debug.WriteLine("Symbol   " + sigCtx.GetSymbolSignature(x));
-                    return new SourceMemberInfo(x.Name, x);
-                });
+                .Where(x => ShouldIncludeMethod(x, root, sigCtx))
+                .Select(x => new SourceMemberInfo(x.Name, x))
+                .ToArray();
 
             var baseSymbol = symbol.BaseType;
             if (baseSymbol == null) return methodMemberInfos;
@@ -91,21 +82,41 @@ namespace MemberLens
             return methodMemberInfos;
         }
 
-        private bool IsAccessibleFromDerived(ISymbol symbol)
+        private static bool ShouldIncludeField(IFieldSymbol symbol, bool root, MemberSignatureContext sigCtx)
+        {
+            if (IsBackingField(symbol)) return false;
+            if (!root && !IsAccessibleFromDerived(symbol)) return false;
+            return sigCtx.IsEffectiveMember(symbol);
+        }
+
+        private static bool ShouldIncludeMethod(IMethodSymbol symbol, bool root, MemberSignatureContext sigCtx)
+        {
+            if (IsPropertyAccessor(symbol)) return false;
+            if (IsCtorOrExplicit(symbol)) return false;
+            if (!root && !IsAccessibleFromDerived(symbol)) return false;
+            return sigCtx.IsEffectiveMember(symbol);
+        }
+
+        private static bool IsAccessibleFromDerived(ISymbol symbol)
         {
             return symbol.DeclaredAccessibility != Accessibility.Private;
         }
 
-        private bool IsBackingField(IFieldSymbol symbol)
+        private static bool IsBackingField(IFieldSymbol symbol)
         {
             var name = symbol.Name;
             return MemberHelper.IsBackingField(name);
         }
 
-        private bool IsCtorOrExplicit(IMethodSymbol symbol)
+        private static bool IsCtorOrExplicit(IMethodSymbol symbol)
         {
             var name = symbol.Name;
             return MemberHelper.IsCtorOrExplicit(name);
+        }
+
+        private static bool IsPropertyAccessor(IMethodSymbol symbol)
+        {
+            return symbol.AssociatedSymbol != null && symbol.AssociatedSymbol is IPropertySymbol;
         }
     }
 }

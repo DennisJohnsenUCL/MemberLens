@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Metadata;
-using MemberLens.SourceMembers;
 using Microsoft.CodeAnalysis;
 
 namespace MemberLens.MemberSignatures
@@ -28,9 +27,10 @@ namespace MemberLens.MemberSignatures
             return _signatures.Add(signature);
         }
 
-        public bool IsEffectiveMember(MetadataReader mdReader, PropertyDefinitionHandle propertyHandle)
+        public bool IsEffectiveMember(MetadataReader mdReader, PropertyDefinitionHandle propertyHandle, TypeDefinition typeDef, IEnumerable<string> typeArguments)
         {
-            return true;
+            var signature = GetPropertyDefinitionSignature(mdReader, propertyHandle, typeDef, typeArguments);
+            return _signatures.Add(signature);
         }
 
         public string GetSymbolSignature(ISymbol symbol)
@@ -79,9 +79,21 @@ namespace MemberLens.MemberSignatures
             return $"M:{name}({parameters})";
         }
 
-        private string GetPropertyDefinitionSignature(MetadataReader mdReader, PropertyDefinitionHandle propHandle)
+        public string GetPropertyDefinitionSignature(MetadataReader mdReader, PropertyDefinitionHandle propHandle, TypeDefinition typeDef, IEnumerable<string> typeArguments)
         {
-            return string.Empty;
+            var propDef = mdReader.GetPropertyDefinition(propHandle);
+            var name = mdReader.GetString(propDef.Name);
+            var provider = new MemberSignatureTypeProvider();
+            var genericContext = new MemberSignatureGenericContext(mdReader, default, typeDef, typeArguments);
+            var sig = propDef.DecodeSignature(provider, genericContext);
+
+            if (sig.ParameterTypes.Length > 0)
+            {
+                var parameters = string.Join(",", sig.ParameterTypes);
+                return $"P:this[{parameters}]";
+            }
+
+            return $"P:{name}";
         }
     }
 }
