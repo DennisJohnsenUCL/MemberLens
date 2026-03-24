@@ -1,10 +1,12 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using MemberLens.Attributes;
+using MemberLens.MemberSignatures;
 using MemberLens.MetadataTooltips;
 using MemberLens.SourceMembers;
 using Microsoft.CodeAnalysis;
@@ -23,12 +25,13 @@ namespace MemberLens.MetadataMembers
             _compilation = compilation;
             _accessorType = accessorType;
 
+            //TODO: Move up
             _crawler = new MetadataCrawler(_compilation);
         }
 
         public string GetRootKey(INamedTypeSymbol symbol) => BuildFullName(symbol) + _accessorType.ToString();
 
-        public IEnumerable<SourceMemberInfo> GetMetadataMemberInfos(INamedTypeSymbol symbol, bool root)
+        public IEnumerable<SourceMemberInfo> GetMetadataMemberInfos(INamedTypeSymbol symbol, MemberSignatureContext sigCtx, IEnumerable<string> typeArguments, bool root)
         {
             var sourceFullName = BuildFullName(symbol);
 
@@ -49,54 +52,60 @@ namespace MemberLens.MetadataMembers
             var match = MetadataHelper.FindTypeDefinition(mdReader, symbol.MetadataName, sourceFullName);
             if (match == null || match.Value.IsNil || match.Value == default) return null;
 
-            var ctx = new TypeDefinitionContext(mdReader.GetTypeDefinition(match.Value), peReader, mdReader);
+            var defCtx = new TypeDefinitionContext(mdReader.GetTypeDefinition(match.Value), peReader, mdReader, typeArguments);
 
             IEnumerable<SourceMemberInfo> items;
             if (_accessorType == AccessorType.Field)
-                items = GetFieldInfos(ctx, root);
+                items = GetFieldInfos(defCtx, sigCtx, root);
 
             else if (_accessorType == AccessorType.Method)
-                items = GetMethodInfos(ctx, root);
+                items = GetMethodInfos(defCtx, sigCtx, root);
 
             else return null;
 
             return items;
         }
 
-        private IEnumerable<SourceMemberInfo> GetFieldInfos(TypeDefinitionContext ctx, bool root)
+        private IEnumerable<SourceMemberInfo> GetFieldInfos(TypeDefinitionContext defCtx, MemberSignatureContext sigCtx, bool root)
         {
-            var memberInfos = ctx.TypeDefinition.GetFields()
-                .Where(x => !IsBackingField(ctx.MetadataReader, x) && (root || IsAccessibleFromDerived(ctx.MetadataReader, x)))
+            var memberInfos = defCtx.TypeDefinition.GetFields()
+                .Where(x => !IsBackingField(defCtx.MetadataReader, x) && (root || IsAccessibleFromDerived(defCtx.MetadataReader, x)))
                 .Select(fieldHandle =>
                 {
-                    var fieldDef = ctx.MetadataReader.GetFieldDefinition(fieldHandle);
-                    var fieldName = ctx.MetadataReader.GetString(fieldDef.Name);
-                    return new SourceMemberInfo(fieldName, MemberDefinitionInfoFactory.FromField(ctx.MetadataReader, fieldHandle));
+                    //TODO: Remove
+                    Debug.WriteLine("Metadata " + sigCtx.GetFieldDefinitionSignature(defCtx.MetadataReader, fieldHandle));
+
+                    var fieldDef = defCtx.MetadataReader.GetFieldDefinition(fieldHandle);
+                    var fieldName = defCtx.MetadataReader.GetString(fieldDef.Name);
+                    return new SourceMemberInfo(fieldName, MemberDefinitionInfoFactory.FromField(defCtx.MetadataReader, fieldHandle));
                 })
                 .ToList();
 
-            var baseCtx = _crawler.GetBaseType(ctx);
+            var baseCtx = _crawler.GetBaseType(defCtx);
             if (baseCtx == null) return memberInfos;
 
-            return memberInfos.Concat(GetFieldInfos(baseCtx, root: false));
+            return memberInfos.Concat(GetFieldInfos(baseCtx, sigCtx, root: false));
         }
 
-        private IEnumerable<SourceMemberInfo> GetMethodInfos(TypeDefinitionContext ctx, bool root)
+        private IEnumerable<SourceMemberInfo> GetMethodInfos(TypeDefinitionContext defCtx, MemberSignatureContext context, bool root)
         {
-            var memberInfos = ctx.TypeDefinition.GetMethods()
-                .Where(x => !IsCtorOrExplicit(ctx.MetadataReader, x) && (root || IsAccessibleFromDerived(ctx.MetadataReader, x)))
+            var memberInfos = defCtx.TypeDefinition.GetMethods()
+                .Where(x => !IsCtorOrExplicit(defCtx.MetadataReader, x) && (root || IsAccessibleFromDerived(defCtx.MetadataReader, x)))
                 .Select(methodHandle =>
                 {
-                    var methodDef = ctx.MetadataReader.GetMethodDefinition(methodHandle);
-                    var methodName = ctx.MetadataReader.GetString(methodDef.Name);
-                    return new SourceMemberInfo(methodName, MemberDefinitionInfoFactory.FromMethod(ctx.MetadataReader, methodHandle));
+                    //TODO: Remove
+                    Debug.WriteLine("Metadata " + context.GetMethodDefinitionSignature(defCtx.MetadataReader, methodHandle, defCtx.TypeDefinition, defCtx.TypeArguments));
+
+                    var methodDef = defCtx.MetadataReader.GetMethodDefinition(methodHandle);
+                    var methodName = defCtx.MetadataReader.GetString(methodDef.Name);
+                    return new SourceMemberInfo(methodName, MemberDefinitionInfoFactory.FromMethod(defCtx.MetadataReader, methodHandle));
                 })
                 .ToList();
 
-            var baseCtx = _crawler.GetBaseType(ctx);
+            var baseCtx = _crawler.GetBaseType(defCtx);
             if (baseCtx == null) return memberInfos;
 
-            return memberInfos.Concat(GetMethodInfos(baseCtx, root: false));
+            return memberInfos.Concat(GetMethodInfos(baseCtx, context, root: false));
         }
 
         private static string BuildFullName(INamedTypeSymbol symbol)

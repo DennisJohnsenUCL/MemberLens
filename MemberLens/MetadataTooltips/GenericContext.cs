@@ -3,6 +3,7 @@ using System.Reflection.Metadata;
 
 namespace MemberLens.MetadataTooltips
 {
+    //TODO: Rename with specific name
     internal class GenericContext
     {
         public static readonly GenericContext Empty = new GenericContext(

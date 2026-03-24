@@ -1,7 +1,9 @@
-﻿using System.IO;
+﻿using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+using MemberLens.MemberSignatures;
 using MemberLens.SourceMembers;
 using Microsoft.CodeAnalysis;
 
@@ -16,54 +18,59 @@ namespace MemberLens.MetadataMembers
             _compilation = compilation;
         }
 
-        public TypeDefinitionContext GetBaseType(TypeDefinitionContext context)
+        public TypeDefinitionContext GetBaseType(TypeDefinitionContext defCtx)
         {
-            var baseEntity = context.TypeDefinition.BaseType;
+            var baseEntity = defCtx.TypeDefinition.BaseType;
 
             if (baseEntity == null || baseEntity.IsNil || baseEntity == default)
             {
-                context.PEReader.Dispose();
+                defCtx.PEReader.Dispose();
                 return null;
             }
 
-            return ResolveEntityHandle(baseEntity, context.MetadataReader, context.PEReader);
+            return ResolveEntityHandle(baseEntity, defCtx);
         }
 
-        private TypeDefinitionContext ResolveEntityHandle(EntityHandle entity, MetadataReader mdReader, PEReader peReader)
+        private TypeDefinitionContext ResolveEntityHandle(EntityHandle entity, TypeDefinitionContext defCtx)
         {
             TypeDefinitionContext NoContext()
             {
-                peReader.Dispose();
+                defCtx.PEReader.Dispose();
                 return null;
             }
 
+            IEnumerable<string> typeArguments = null;
             if (entity.Kind == HandleKind.TypeSpecification)
             {
-                if (!(ResolveTypeSpecification((TypeSpecificationHandle)entity, mdReader) is EntityHandle resolved))
+                if (!(ResolveTypeSpecification((TypeSpecificationHandle)entity, defCtx) is TypeSpecificationContext specCtx))
                     return NoContext();
-                entity = resolved;
+
+                entity = specCtx.ResolvedEntity;
+                typeArguments = specCtx.TypeArguments;
             }
 
             if (entity.Kind == HandleKind.TypeDefinition)
             {
                 var typeDefHandle = (TypeDefinitionHandle)entity;
-                var typeDef = mdReader.GetTypeDefinition(typeDefHandle);
-                return new TypeDefinitionContext(typeDef, peReader, mdReader);
+                var typeDef = defCtx.MetadataReader.GetTypeDefinition(typeDefHandle);
+                return new TypeDefinitionContext(typeDef, defCtx.PEReader, defCtx.MetadataReader, typeArguments);
             }
 
             else if (entity.Kind == HandleKind.TypeReference)
             {
                 var typeRefHandle = (TypeReferenceHandle)entity;
-                return ResolveTypeReference(typeRefHandle, mdReader, peReader);
+                var fromRefCtx = ResolveTypeReference(typeRefHandle, defCtx.MetadataReader, defCtx.PEReader, typeArguments);
+                if (fromRefCtx == null) return null;
+                return fromRefCtx;
             }
             else return NoContext();
         }
 
-        private static EntityHandle? ResolveTypeSpecification(TypeSpecificationHandle typeSpecHandle, MetadataReader reader)
+        private static TypeSpecificationContext ResolveTypeSpecification(TypeSpecificationHandle typeSpecHandle, TypeDefinitionContext defCtx)
         {
-            var typeSpec = reader.GetTypeSpecification(typeSpecHandle);
+            var typeSpec = defCtx.MetadataReader.GetTypeSpecification(typeSpecHandle);
 
-            var blobReader = reader.GetBlobReader(typeSpec.Signature);
+            var blobReader = defCtx.MetadataReader.GetBlobReader(typeSpec.Signature);
             var signatureTypeCode = blobReader.ReadSignatureTypeCode();
 
             if (signatureTypeCode == SignatureTypeCode.GenericTypeInstance)
@@ -74,12 +81,18 @@ namespace MemberLens.MetadataMembers
                 if (typeHandle == null || typeHandle.IsNil || typeHandle == default)
                     return null;
 
-                return typeHandle;
+                //TODO: Use specific provider and context instead here?
+                var provider = new MemberSignatureTypeProvider();
+                var genericContext = new MemberSignatureGenericContext(defCtx.MetadataReader, defCtx.TypeDefinition, defCtx.TypeArguments);
+                typeSpec.DecodeSignature(provider, genericContext);
+                var typeArguments = provider.LastTypeArguments;
+
+                return new TypeSpecificationContext(typeHandle, typeArguments);
             }
             else return null;
         }
 
-        private TypeDefinitionContext ResolveTypeReference(TypeReferenceHandle typeRefHandle, MetadataReader mdReader, PEReader peReader)
+        private TypeDefinitionContext ResolveTypeReference(TypeReferenceHandle typeRefHandle, MetadataReader mdReader, PEReader peReader, IEnumerable<string> typeArguments)
         {
             TypeDefinitionContext NoContext()
             {
@@ -125,7 +138,7 @@ namespace MemberLens.MetadataMembers
             peReader.Dispose();
 
             var extTypeDef = extMdReader.GetTypeDefinition(match.Value);
-            return new TypeDefinitionContext(extTypeDef, extPeReader, extMdReader);
+            return new TypeDefinitionContext(extTypeDef, extPeReader, extMdReader, typeArguments);
         }
 
         private static string BuildFullName(MetadataReader reader, TypeReferenceHandle handle)

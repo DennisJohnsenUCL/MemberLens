@@ -4,6 +4,7 @@ using System.Reflection.Metadata;
 
 namespace MemberLens.MetadataTooltips
 {
+    //TODO: Rename with specific name
     internal class SignatureTypeProvider : ISignatureTypeProvider<string, GenericContext>
     {
         private readonly MetadataReader _reader;

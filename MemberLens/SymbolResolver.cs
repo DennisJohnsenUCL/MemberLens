@@ -1,6 +1,8 @@
 ﻿using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using MemberLens.Attributes;
+using MemberLens.MemberSignatures;
 using MemberLens.MetadataMembers;
 using MemberLens.SourceMembers;
 using Microsoft.CodeAnalysis;
@@ -18,25 +20,30 @@ namespace MemberLens
             _metadataResolver = metadataResolver;
         }
 
-        public IEnumerable<SourceMemberInfo> GetSourceMemberInfos(INamedTypeSymbol symbol, bool root)
+        public IEnumerable<SourceMemberInfo> GetSourceMemberInfos(INamedTypeSymbol symbol, MemberSignatureContext sigCtx, bool root)
         {
             if (_accessorType == AccessorType.Field)
             {
-                return GetFieldMemberInfos(symbol, root);
+                return GetFieldMemberInfos(symbol, sigCtx, root);
             }
             else if (_accessorType == AccessorType.Method)
             {
-                return GetMethodMemberInfos(symbol, root);
+                return GetMethodMemberInfos(symbol, sigCtx, root);
             }
             else return null;
         }
 
-        private IEnumerable<SourceMemberInfo> GetFieldMemberInfos(INamedTypeSymbol symbol, bool root)
+        private IEnumerable<SourceMemberInfo> GetFieldMemberInfos(INamedTypeSymbol symbol, MemberSignatureContext sigCtx, bool root)
         {
             var fieldMemberInfos = symbol.GetMembers()
                 .OfType<IFieldSymbol>()
                 .Where(x => !IsBackingField(x) && (root || IsAccessibleFromDerived(x)))
-                .Select(x => new SourceMemberInfo(x.Name, x));
+                .Select(x =>
+                {
+                    //TODO: Remove
+                    Debug.WriteLine("Symbol   " + sigCtx.GetSymbolSignature(x));
+                    return new SourceMemberInfo(x.Name, x);
+                });
 
             var baseSymbol = symbol.BaseType;
             if (baseSymbol == null) return fieldMemberInfos;
@@ -44,20 +51,28 @@ namespace MemberLens
                 return fieldMemberInfos;
 
             if (baseSymbol.Locations[0].IsInSource)
-                return fieldMemberInfos.Concat(GetFieldMemberInfos(baseSymbol, root: false));
+                return fieldMemberInfos.Concat(GetFieldMemberInfos(baseSymbol, sigCtx, root: false));
 
             if (baseSymbol.Locations[0].IsInMetadata)
-                return fieldMemberInfos.Concat(_metadataResolver.GetMetadataMemberInfos(baseSymbol, root: false));
+            {
+                var typeArguments = baseSymbol.TypeArguments.Select(x => x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+                return fieldMemberInfos.Concat(_metadataResolver.GetMetadataMemberInfos(baseSymbol, sigCtx, typeArguments, root: false));
+            }
 
             return fieldMemberInfos;
         }
 
-        private IEnumerable<SourceMemberInfo> GetMethodMemberInfos(INamedTypeSymbol symbol, bool root)
+        private IEnumerable<SourceMemberInfo> GetMethodMemberInfos(INamedTypeSymbol symbol, MemberSignatureContext sigCtx, bool root)
         {
             var methodMemberInfos = symbol.GetMembers()
                 .OfType<IMethodSymbol>()
                 .Where(x => !IsCtorOrExplicit(x) && (root || IsAccessibleFromDerived(x)))
-                .Select(x => new SourceMemberInfo(x.Name, x));
+                .Select(x =>
+                {
+                    //TODO: Remove
+                    Debug.WriteLine("Symbol   " + sigCtx.GetSymbolSignature(x));
+                    return new SourceMemberInfo(x.Name, x);
+                });
 
             var baseSymbol = symbol.BaseType;
             if (baseSymbol == null) return methodMemberInfos;
@@ -65,10 +80,13 @@ namespace MemberLens
                 return methodMemberInfos;
 
             if (baseSymbol.Locations[0].IsInSource)
-                return methodMemberInfos.Concat(GetMethodMemberInfos(baseSymbol, root: false));
+                return methodMemberInfos.Concat(GetMethodMemberInfos(baseSymbol, sigCtx, root: false));
 
             if (baseSymbol.Locations[0].IsInMetadata)
-                return methodMemberInfos.Concat(_metadataResolver.GetMetadataMemberInfos(baseSymbol, root: false));
+            {
+                var typeArguments = baseSymbol.TypeArguments.Select(x => x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+                return methodMemberInfos.Concat(_metadataResolver.GetMetadataMemberInfos(baseSymbol, sigCtx, typeArguments, root: false));
+            }
 
             return methodMemberInfos;
         }

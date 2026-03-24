@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using MemberLens.Attributes;
+using MemberLens.MemberSignatures;
 using MemberLens.MetadataMembers;
 using Microsoft.CodeAnalysis;
 using Microsoft.VisualStudio.Core.Imaging;
@@ -35,15 +36,20 @@ namespace MemberLens.SourceMembers
             _source = source;
 
             _icon = GetIcon();
+
+            //TODO: Move these up?
             _metadataResolver = new MetadataResolver(compilation, _accessorType);
             _sourceResolver = new SymbolResolver(_accessorType, _metadataResolver);
         }
 
         public IEnumerable<CompletionItem> Build()
         {
+            //TODO: Move this up?
+            var sigCtx = new MemberSignatureContext();
+
             if (_sourceType.Locations[0].IsInSource)
             {
-                var memberInfos = _sourceResolver.GetSourceMemberInfos(_sourceType, root: true);
+                var memberInfos = _sourceResolver.GetSourceMemberInfos(_sourceType, sigCtx, root: true);
 
                 return BuildMemberCompletionItems(memberInfos);
             }
@@ -55,7 +61,9 @@ namespace MemberLens.SourceMembers
                 if (_itemCache.TryGetValue(rootKey, out var cachedItems))
                     return RebuildCachedItems(cachedItems);
 
-                var memberInfos = _metadataResolver.GetMetadataMemberInfos(_sourceType, root: true);
+                var typeArguments = _sourceType.TypeArguments.Select(x => x.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+
+                var memberInfos = _metadataResolver.GetMetadataMemberInfos(_sourceType, sigCtx, typeArguments, root: true);
                 var completionItems = BuildMemberCompletionItems(memberInfos);
 
                 if (!_itemCache.ContainsKey(rootKey))

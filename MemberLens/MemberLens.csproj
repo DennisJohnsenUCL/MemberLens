@@ -46,6 +46,10 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="ClassificationHelper.cs" />
+    <Compile Include="MemberSignatures\MemberSignatureContext.cs" />
+    <Compile Include="MemberSignatures\MemberSignatureGenericContext.cs" />
+    <Compile Include="MemberSignatures\MemberSignatureTypeProvider.cs" />
+    <Compile Include="MetadataMembers\TypeSpecificationContext.cs" />
     <Compile Include="SourceMembers\CompletionItemBuilder.cs" />
     <Compile Include="CompletionSourceHelper.cs" />
     <Compile Include="CompletionSymbolContext.cs" />
