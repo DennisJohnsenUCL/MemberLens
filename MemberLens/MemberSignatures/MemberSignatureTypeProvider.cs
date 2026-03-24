@@ -11,12 +11,13 @@ namespace MemberLens.MemberSignatures
 
         public string GetArrayType(string elementType, ArrayShape shape)
         {
-            return string.Empty;
+            var commas = new string(',', shape.Rank - 1);
+            return $"{elementType}[{commas}]";
         }
 
         public string GetByReferenceType(string elementType)
         {
-            return string.Empty;
+            return elementType;
         }
 
         public string GetFunctionPointerType(MethodSignature<string> signature)
@@ -65,7 +66,7 @@ namespace MemberLens.MemberSignatures
 
         public string GetPointerType(string elementType)
         {
-            return string.Empty;
+            return $"{elementType}*";
         }
 
         public string GetPrimitiveType(PrimitiveTypeCode typeCode)
@@ -94,7 +95,7 @@ namespace MemberLens.MemberSignatures
 
         public string GetSZArrayType(string elementType)
         {
-            return string.Empty;
+            return $"{elementType}[]";
         }
 
         public string GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind)
@@ -119,7 +120,8 @@ namespace MemberLens.MemberSignatures
 
         public string GetTypeFromSpecification(MetadataReader reader, MemberSignatureGenericContext genericContext, TypeSpecificationHandle handle, byte rawTypeKind)
         {
-            return string.Empty;
+            var typeSpec = reader.GetTypeSpecification(handle);
+            return typeSpec.DecodeSignature(this, genericContext);
         }
     }
 }
