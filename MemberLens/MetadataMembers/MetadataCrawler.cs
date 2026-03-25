@@ -21,6 +21,35 @@ namespace MemberLens.MetadataMembers
             _compilation = compilation;
         }
 
+        public TypeDefinitionContext GetTypeDefinitionFromSymbol(INamedTypeSymbol symbol, IEnumerable<string> typeArguments)
+        {
+            var assembly = symbol.ContainingAssembly;
+
+            if (MemberHelper.IsCoreLibAssembly(assembly.Name)) return null;
+
+            if (!(_compilation.GetMetadataReference(
+                assembly) is PortableExecutableReference reference)) return null;
+
+            var path = reference.FilePath;
+            if (path == null) return null;
+
+            var stream = File.OpenRead(path);
+            _readers.Add(stream);
+            var peReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata);
+            _readers.Add(peReader);
+            var mdReader = peReader.GetMetadataReader();
+
+            var sourceFullName = MetadataHelper.BuildFullName(symbol);
+            var match = MetadataHelper.FindTypeDefinition(mdReader, symbol.MetadataName, sourceFullName);
+            if (match == null || match.Value.IsNil || match.Value == default)
+            {
+                peReader.Dispose();
+                return null;
+            }
+
+            return new TypeDefinitionContext(mdReader.GetTypeDefinition(match.Value), peReader, mdReader, typeArguments);
+        }
+
         public TypeDefinitionContext GetBaseType(TypeDefinitionContext defCtx)
         {
             var baseEntity = defCtx.TypeDefinition.BaseType;

@@ -1,10 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
 using MemberLens.Attributes;
 using MemberLens.MemberSignatures;
 using MemberLens.MetadataTooltips;
@@ -15,8 +13,6 @@ namespace MemberLens.MetadataMembers
 {
     internal class MetadataResolver : IDisposable
     {
-        private readonly HashSet<IDisposable> _readers = new HashSet<IDisposable>();
-
         private readonly Compilation _compilation;
         private readonly AccessorType _accessorType;
 
@@ -30,43 +26,20 @@ namespace MemberLens.MetadataMembers
             _crawler = crawler;
         }
 
-        public string GetRootKey(INamedTypeSymbol symbol) => BuildFullName(symbol) + _accessorType.ToString();
+        public string GetRootKey(INamedTypeSymbol symbol) => MetadataHelper.BuildFullName(symbol) + _accessorType.ToString();
 
         public IEnumerable<SourceMemberInfo> GetMetadataMemberInfos(INamedTypeSymbol symbol, MemberSignatureContext sigCtx, IEnumerable<string> typeArguments, bool root)
         {
-            var sourceFullName = BuildFullName(symbol);
+            var defCtx = _crawler.GetTypeDefinitionFromSymbol(symbol, typeArguments);
+            if (defCtx == null) return null;
 
-            var assembly = symbol.ContainingAssembly;
-
-            if (MemberHelper.IsCoreLibAssembly(assembly.Name)) return null;
-
-            if (!(_compilation.GetMetadataReference(
-                assembly) is PortableExecutableReference reference)) return null;
-
-            var path = reference.FilePath;
-            if (path == null) return null;
-
-            var stream = File.OpenRead(path);
-            _readers.Add(stream);
-            var peReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata);
-            _readers.Add(peReader);
-            var mdReader = peReader.GetMetadataReader();
-
-            var match = MetadataHelper.FindTypeDefinition(mdReader, symbol.MetadataName, sourceFullName);
-            if (match == null || match.Value.IsNil || match.Value == default) return null;
-
-            var defCtx = new TypeDefinitionContext(mdReader.GetTypeDefinition(match.Value), peReader, mdReader, typeArguments);
-
-            IEnumerable<SourceMemberInfo> items;
             if (_accessorType == AccessorType.Field)
-                items = GetFieldInfos(defCtx, sigCtx, root);
+                return GetFieldInfos(defCtx, sigCtx, root);
 
             else if (_accessorType == AccessorType.Method)
-                items = GetMethodInfos(defCtx, sigCtx, root);
+                return GetMethodInfos(defCtx, sigCtx, root);
 
             else return null;
-
-            return items;
         }
 
         private IEnumerable<SourceMemberInfo> GetFieldInfos(TypeDefinitionContext defCtx, MemberSignatureContext sigCtx, bool root)
@@ -103,23 +76,6 @@ namespace MemberLens.MetadataMembers
             if (baseCtx == null) return memberInfos;
 
             return memberInfos.Concat(GetMethodInfos(baseCtx, sigCtx, root: false));
-        }
-
-        private static string BuildFullName(INamedTypeSymbol symbol)
-        {
-            var name = symbol.MetadataName;
-
-            if (symbol.ContainingType != null)
-            {
-                return BuildFullName(symbol.ContainingType) + "/" + name;
-            }
-
-            var cns = symbol.ContainingNamespace;
-            var ns = cns != null && !cns.IsGlobalNamespace
-                ? cns.ToDisplayString()
-                : null;
-
-            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
         }
 
         private static bool ShouldIncludeField(MetadataReader mdReader, FieldDefinitionHandle fieldHandle, bool root, MemberSignatureContext sigCtx)
@@ -173,7 +129,6 @@ namespace MemberLens.MetadataMembers
 
         public void Dispose()
         {
-            foreach (var reader in _readers) reader.Dispose();
             _crawler.Dispose();
         }
     }

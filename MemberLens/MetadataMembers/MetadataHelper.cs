@@ -1,4 +1,5 @@
 ﻿using System.Reflection.Metadata;
+using Microsoft.CodeAnalysis;
 
 namespace MemberLens.MetadataMembers
 {
@@ -31,6 +32,23 @@ namespace MemberLens.MetadataMembers
             }
 
             var ns = reader.GetString(typeDef.Namespace);
+            return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
+        }
+
+        public static string BuildFullName(INamedTypeSymbol symbol)
+        {
+            var name = symbol.MetadataName;
+
+            if (symbol.ContainingType != null)
+            {
+                return BuildFullName(symbol.ContainingType) + "/" + name;
+            }
+
+            var cns = symbol.ContainingNamespace;
+            var ns = cns != null && !cns.IsGlobalNamespace
+                ? cns.ToDisplayString()
+                : null;
+
             return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
         }
     }
