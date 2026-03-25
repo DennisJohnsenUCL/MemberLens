@@ -9,18 +9,25 @@ namespace MemberLens.MetadataMembers
         public TypeDefinition TypeDefinition { get; }
         public PEReader PEReader { get; }
         public MetadataReader MetadataReader { get; }
-        public IEnumerable<string> TypeArguments { get; }
+        public IEnumerable<string> TypeArguments { get; set; }
 
         public TypeDefinitionContext(
             TypeDefinition typeDefinition,
             PEReader pEReader,
             MetadataReader metadataReader,
-            IEnumerable<string> typeArguments)
+            IEnumerable<string> typeArguments) : this(typeDefinition, pEReader, metadataReader)
+        {
+            TypeArguments = typeArguments;
+        }
+
+        public TypeDefinitionContext(
+            TypeDefinition typeDefinition,
+            PEReader pEReader,
+            MetadataReader metadataReader)
         {
             TypeDefinition = typeDefinition;
             PEReader = pEReader;
             MetadataReader = metadataReader;
-            TypeArguments = typeArguments;
         }
     }
 }

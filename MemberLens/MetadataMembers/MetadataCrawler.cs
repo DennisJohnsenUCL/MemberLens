@@ -21,7 +21,7 @@ namespace MemberLens.MetadataMembers
             _compilation = compilation;
         }
 
-        public TypeDefinitionContext GetTypeDefinitionFromSymbol(INamedTypeSymbol symbol, IEnumerable<string> typeArguments)
+        public TypeDefinitionContext GetTypeDefinitionFromSymbol(INamedTypeSymbol symbol)
         {
             var assembly = symbol.ContainingAssembly;
 
@@ -47,7 +47,7 @@ namespace MemberLens.MetadataMembers
                 return null;
             }
 
-            return new TypeDefinitionContext(mdReader.GetTypeDefinition(match.Value), peReader, mdReader, typeArguments);
+            return new TypeDefinitionContext(mdReader.GetTypeDefinition(match.Value), peReader, mdReader);
         }
 
         public TypeDefinitionContext GetBaseType(TypeDefinitionContext defCtx)
@@ -91,8 +91,9 @@ namespace MemberLens.MetadataMembers
             else if (entity.Kind == HandleKind.TypeReference)
             {
                 var typeRefHandle = (TypeReferenceHandle)entity;
-                var fromRefCtx = ResolveTypeReference(typeRefHandle, defCtx.MetadataReader, defCtx.PEReader, typeArguments);
+                var fromRefCtx = ResolveTypeReference(typeRefHandle, defCtx.MetadataReader, defCtx.PEReader);
                 if (fromRefCtx == null) return null;
+                fromRefCtx.TypeArguments = typeArguments;
                 return fromRefCtx;
             }
             else return NoContext();
@@ -123,7 +124,7 @@ namespace MemberLens.MetadataMembers
             else return null;
         }
 
-        private TypeDefinitionContext ResolveTypeReference(TypeReferenceHandle typeRefHandle, MetadataReader mdReader, PEReader peReader, IEnumerable<string> typeArguments)
+        private TypeDefinitionContext ResolveTypeReference(TypeReferenceHandle typeRefHandle, MetadataReader mdReader, PEReader peReader)
         {
             TypeDefinitionContext NoContext()
             {
@@ -171,7 +172,7 @@ namespace MemberLens.MetadataMembers
             peReader.Dispose();
 
             var extTypeDef = extMdReader.GetTypeDefinition(match.Value);
-            return new TypeDefinitionContext(extTypeDef, extPeReader, extMdReader, typeArguments);
+            return new TypeDefinitionContext(extTypeDef, extPeReader, extMdReader);
         }
 
         private static string BuildFullName(MetadataReader reader, TypeReferenceHandle handle)

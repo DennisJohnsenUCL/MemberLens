@@ -30,8 +30,9 @@ namespace MemberLens.MetadataMembers
 
         public IEnumerable<SourceMemberInfo> GetMetadataMemberInfos(INamedTypeSymbol symbol, MemberSignatureContext sigCtx, IEnumerable<string> typeArguments, bool root)
         {
-            var defCtx = _crawler.GetTypeDefinitionFromSymbol(symbol, typeArguments);
+            var defCtx = _crawler.GetTypeDefinitionFromSymbol(symbol);
             if (defCtx == null) return null;
+            defCtx.TypeArguments = typeArguments;
 
             if (_accessorType == AccessorType.Field)
                 return GetFieldInfos(defCtx, sigCtx, root);
