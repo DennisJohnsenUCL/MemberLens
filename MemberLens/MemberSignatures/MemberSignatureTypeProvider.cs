@@ -22,7 +22,11 @@ namespace MemberLens.MemberSignatures
 
         public string GetFunctionPointerType(MethodSignature<string> signature)
         {
-            return string.Empty;
+            var paramTypes = string.Join(", ", signature.ParameterTypes);
+            var returnType = signature.ReturnType;
+            if (signature.ParameterTypes.Length > 0)
+                return $"delegate*<{paramTypes}, {returnType}>";
+            return $"delegate*<{returnType}>";
         }
 
         public string GetGenericInstantiation(string genericType, ImmutableArray<string> typeArguments)
@@ -56,7 +60,7 @@ namespace MemberLens.MemberSignatures
 
         public string GetModifiedType(string modifier, string unmodifiedType, bool isRequired)
         {
-            return string.Empty;
+            return unmodifiedType;
         }
 
         public string GetPinnedType(string elementType)
@@ -89,6 +93,7 @@ namespace MemberLens.MemberSignatures
                 case PrimitiveTypeCode.Object: return "object";
                 case PrimitiveTypeCode.IntPtr: return "nint";
                 case PrimitiveTypeCode.UIntPtr: return "nuint";
+                case PrimitiveTypeCode.Void: return "void";
                 default: return string.Empty;
             }
         }
