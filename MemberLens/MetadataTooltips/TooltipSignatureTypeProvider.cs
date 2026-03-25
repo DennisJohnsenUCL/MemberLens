@@ -1,23 +1,10 @@
-﻿using System;
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Reflection.Metadata;
 
 namespace MemberLens.MetadataTooltips
 {
-    //TODO: Rename with specific name
-    internal class SignatureTypeProvider : ISignatureTypeProvider<string, GenericContext>
+    internal class TooltipSignatureTypeProvider : ISignatureTypeProvider<string, TooltipGenericContext>
     {
-        private readonly MetadataReader _reader;
-
-        public SignatureTypeProvider(MetadataReader reader)
-        {
-            _reader = reader ?? throw new ArgumentNullException(nameof(reader));
-        }
-
-        // ──────────────────────────────────────────────
-        //  ISimpleTypeProvider
-        // ──────────────────────────────────────────────
-
         public string GetPrimitiveType(PrimitiveTypeCode typeCode)
         {
             switch (typeCode)
@@ -50,12 +37,10 @@ namespace MemberLens.MetadataTooltips
             var typeDef = reader.GetTypeDefinition(handle);
             var name = reader.GetString(typeDef.Name);
 
-            // Strip the generic arity suffix (e.g. "List`1" → "List")
             var backtick = name.IndexOf('`');
             if (backtick > 0)
                 name = name.Substring(0, backtick);
 
-            // If nested, prepend the declaring type
             var declaringTypeHandle = typeDef.GetDeclaringType();
             if (!declaringTypeHandle.IsNil)
             {
@@ -63,7 +48,6 @@ namespace MemberLens.MetadataTooltips
                 return outer + "." + name;
             }
 
-            // Prepend namespace
             var ns = reader.GetString(typeDef.Namespace);
             if (!string.IsNullOrEmpty(ns))
                 return ns + "." + name;
@@ -78,7 +62,6 @@ namespace MemberLens.MetadataTooltips
             var name = reader.GetString(typeRef.Name);
             var ns = reader.GetString(typeRef.Namespace);
 
-            // Map well-known framework types to C# keywords
             if (ns == "System")
             {
                 switch (name)
@@ -104,12 +87,10 @@ namespace MemberLens.MetadataTooltips
                 }
             }
 
-            // Strip generic arity suffix
             var backtick = name.IndexOf('`');
             if (backtick > 0)
                 name = name.Substring(0, backtick);
 
-            // Check if this is a nested type (resolution scope is another TypeRef)
             if (typeRef.ResolutionScope.Kind == HandleKind.TypeReference)
             {
                 var outer = GetTypeFromReference(
@@ -123,23 +104,14 @@ namespace MemberLens.MetadataTooltips
             return name;
         }
 
-        // ──────────────────────────────────────────────
-        //  ISZArrayTypeProvider
-        // ──────────────────────────────────────────────
-
         public string GetSZArrayType(string elementType)
         {
             return elementType + "[]";
         }
 
-        // ──────────────────────────────────────────────
-        //  IConstructedTypeProvider
-        // ──────────────────────────────────────────────
-
         public string GetGenericInstantiation(
             string genericType, ImmutableArray<string> typeArguments)
         {
-            // Handle System.Nullable`1 → T?
             if (typeArguments.Length == 1 &&
                 (genericType == "System.Nullable" ||
                  genericType.EndsWith(".Nullable")))
@@ -152,7 +124,6 @@ namespace MemberLens.MetadataTooltips
 
         public string GetArrayType(string elementType, ArrayShape shape)
         {
-            // Multi-dimensional arrays: int[,] or int[,,]
             return elementType + "[" + new string(',', shape.Rank - 1) + "]";
         }
 
@@ -166,13 +137,8 @@ namespace MemberLens.MetadataTooltips
             return elementType + "*";
         }
 
-        // ──────────────────────────────────────────────
-        //  ISignatureTypeProvider
-        // ──────────────────────────────────────────────
-
         public string GetFunctionPointerType(MethodSignature<string> signature)
         {
-            // delegate*<ParamTypes, ReturnType>
             var parts = new System.Text.StringBuilder("delegate*<");
             for (int i = 0; i < signature.ParameterTypes.Length; i++)
             {
@@ -184,7 +150,7 @@ namespace MemberLens.MetadataTooltips
             return parts.ToString();
         }
 
-        public string GetGenericMethodParameter(GenericContext genericContext, int index)
+        public string GetGenericMethodParameter(TooltipGenericContext genericContext, int index)
         {
             if (genericContext != null &&
                 index < genericContext.MethodParameters.Length)
@@ -192,11 +158,10 @@ namespace MemberLens.MetadataTooltips
                 return genericContext.MethodParameters[index];
             }
 
-            // Fallback: use the conventional !!N notation
             return "!!" + index;
         }
 
-        public string GetGenericTypeParameter(GenericContext genericContext, int index)
+        public string GetGenericTypeParameter(TooltipGenericContext genericContext, int index)
         {
             if (genericContext != null &&
                 index < genericContext.TypeParameters.Length)
@@ -204,13 +169,11 @@ namespace MemberLens.MetadataTooltips
                 return genericContext.TypeParameters[index];
             }
 
-            // Fallback: use the conventional !N notation
             return "!" + index;
         }
 
         public string GetModifiedType(string modifier, string unmodifiedType, bool isRequired)
         {
-            // modreq/modopt are rarely shown in tooltips; just pass through
             return unmodifiedType;
         }
 
@@ -221,14 +184,10 @@ namespace MemberLens.MetadataTooltips
 
         public string GetTypeFromSpecification(
             MetadataReader reader,
-            GenericContext genericContext,
+            TooltipGenericContext genericContext,
             TypeSpecificationHandle handle,
             byte rawTypeKind)
         {
-            // TypeSpecifications are things like generic instantiations,
-            // arrays, pointers, etc. The decoder will call back into us
-            // recursively after decoding the blob, so we just need to
-            // kick off the decode.
             var typeSpec = reader.GetTypeSpecification(handle);
             return typeSpec.DecodeSignature(this, genericContext);
         }

@@ -18,8 +18,8 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var methodName = reader.GetString(methodDef.Name);
 
-            var context = GenericContext.Create(reader, declaringTypeHandle, typeArguments, methodHandle);
-            var provider = new SignatureTypeProvider(reader);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, typeArguments, methodHandle);
+            var provider = new TooltipSignatureTypeProvider();
             var sig = methodDef.DecodeSignature(provider, context);
 
             info.TypeParameterNames = BuildTypeParameterNames(context);
@@ -50,8 +50,8 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var fieldName = reader.GetString(fieldDef.Name);
 
-            var context = GenericContext.Create(reader, declaringTypeHandle, null);
-            var provider = new SignatureTypeProvider(reader);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null);
+            var provider = new TooltipSignatureTypeProvider();
             var fieldType = fieldDef.DecodeSignature(provider, context);
 
             info.TypeParameterNames = BuildTypeParameterNames(context);
@@ -85,8 +85,8 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var propertyName = reader.GetString(propertyDef.Name);
 
-            var context = GenericContext.Create(reader, declaringTypeHandle, null);
-            var provider = new SignatureTypeProvider(reader);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null);
+            var provider = new TooltipSignatureTypeProvider();
             var sig = propertyDef.DecodeSignature(provider, context);
 
             info.TypeParameterNames = BuildTypeParameterNames(context);
@@ -116,17 +116,17 @@ namespace MemberLens.MetadataTooltips
             return declaringTypeName;
         }
 
-        private static HashSet<string> BuildTypeParameterNames(GenericContext context)
+        private static HashSet<string> BuildTypeParameterNames(TooltipGenericContext context)
         {
             var names = new HashSet<string>();
-            foreach (var tp in context.TypeParameters)
+            foreach (var tp in context.OriginalTypeParameters)
                 names.Add(tp);
             foreach (var mp in context.MethodParameters)
                 names.Add(mp);
             return names;
         }
 
-        private static void AddDeclaringType(MemberDefinitionInfo info, string declaringTypeName, GenericContext context)
+        private static void AddDeclaringType(MemberDefinitionInfo info, string declaringTypeName, TooltipGenericContext context)
         {
             info.SignatureParts.Add(DisplayPart.Type(declaringTypeName));
             if (context.TypeParameters.Length > 0)
@@ -139,7 +139,16 @@ namespace MemberLens.MetadataTooltips
                         info.SignatureParts.Add(DisplayPart.Punctuation(","));
                         info.SignatureParts.Add(DisplayPart.Space());
                     }
-                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.TypeParameters[i]));
+
+                    var hasSubstitution = context.TypeParameters != null && i < context.TypeParameters.Length;
+                    var param = hasSubstitution ? context.TypeParameters[i] : context.OriginalTypeParameters[i];
+
+                    if (!hasSubstitution)
+                        info.SignatureParts.Add(DisplayPart.TypeParameterName(param));
+                    else if (MetadataTooltipHelper.IsCSharpTypeKeyword(param))
+                        info.SignatureParts.Add(DisplayPart.Keyword(param));
+                    else
+                        info.SignatureParts.Add(DisplayPart.Type(param));
                 }
                 info.SignatureParts.Add(DisplayPart.Punctuation(">"));
             }
@@ -179,7 +188,7 @@ namespace MemberLens.MetadataTooltips
             info.SignatureParts.Add(DisplayPart.Space());
         }
 
-        private static void AddMethodTypeParameters(MemberDefinitionInfo info, GenericContext context)
+        private static void AddMethodTypeParameters(MemberDefinitionInfo info, TooltipGenericContext context)
         {
             if (context.MethodParameters.Length > 0)
             {
@@ -252,6 +261,15 @@ namespace MemberLens.MetadataTooltips
 
                         info.SignatureParts.Add(DisplayPart.Space());
                         paramType = paramType.Substring(4);
+                    }
+
+                    if (HasAttribute(reader, param.GetCustomAttributes(),
+                        "System.Runtime.CompilerServices", "ParamArrayAttribute")
+                        || HasAttribute(reader, param.GetCustomAttributes(),
+                        "System", "ParamArrayAttribute"))
+                    {
+                        info.SignatureParts.Add(DisplayPart.Keyword("params"));
+                        info.SignatureParts.Add(DisplayPart.Space());
                     }
 
                     AddTypePart(info, paramType);
