@@ -22,7 +22,8 @@ namespace MemberLens
                 parameterOptions:
                     SymbolDisplayParameterOptions.IncludeType |
                     SymbolDisplayParameterOptions.IncludeName |
-                    SymbolDisplayParameterOptions.IncludeDefaultValue,
+                    SymbolDisplayParameterOptions.IncludeDefaultValue |
+                    SymbolDisplayParameterOptions.IncludeParamsRefOut,
                 miscellaneousOptions:
                     SymbolDisplayMiscellaneousOptions.UseSpecialTypes
             );
