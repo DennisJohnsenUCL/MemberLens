@@ -86,7 +86,7 @@ namespace MemberLens.MetadataMembers
         private IEnumerable<SourceMemberInfo> GetMethodInfos(TypeDefinitionContext defCtx, MemberSignatureContext sigCtx, bool root)
         {
             var memberInfos = defCtx.TypeDefinition.GetMethods()
-                .Where(x => ShouldIncludeMethod(defCtx.MetadataReader, x, root, sigCtx, defCtx.TypeDefinition, defCtx.TypeArguments))
+                .Where(x => ShouldIncludeMethod(defCtx, x, root, sigCtx))
                 .Select(methodHandle =>
                 {
                     var methodDef = defCtx.MetadataReader.GetMethodDefinition(methodHandle);
@@ -125,12 +125,12 @@ namespace MemberLens.MetadataMembers
             return sigCtx.IsEffectiveMember(mdReader, fieldHandle);
         }
 
-        private static bool ShouldIncludeMethod(MetadataReader mdReader, MethodDefinitionHandle methodHandle, bool root, MemberSignatureContext sigCtx, TypeDefinition typeDef, IEnumerable<string> typeArguments)
+        private static bool ShouldIncludeMethod(TypeDefinitionContext defCtx, MethodDefinitionHandle methodHandle, bool root, MemberSignatureContext sigCtx)
         {
-            if (IsPropertyAccessor(mdReader, methodHandle)) return false;
-            if (IsCtorOrExplicit(mdReader, methodHandle)) return false;
-            if (!root && !IsAccessibleFromDerived(mdReader, methodHandle)) return false;
-            return sigCtx.IsEffectiveMember(mdReader, methodHandle, typeDef, typeArguments);
+            if (IsPropertyAccessor(defCtx.MetadataReader, methodHandle)) return false;
+            if (IsCtorOrExplicit(defCtx.MetadataReader, methodHandle)) return false;
+            if (!root && !IsAccessibleFromDerived(defCtx.MetadataReader, methodHandle)) return false;
+            return sigCtx.IsEffectiveMember(defCtx, methodHandle);
         }
 
         private static bool IsBackingField(MetadataReader reader, FieldDefinitionHandle handle)

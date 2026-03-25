@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.Metadata;
+using MemberLens.MetadataMembers;
 using Microsoft.CodeAnalysis;
 
 namespace MemberLens.MemberSignatures
@@ -21,15 +22,15 @@ namespace MemberLens.MemberSignatures
             return _signatures.Add(signature);
         }
 
-        public bool IsEffectiveMember(MetadataReader mdReader, MethodDefinitionHandle methodHandle, TypeDefinition typeDef, IEnumerable<string> typeArguments)
+        public bool IsEffectiveMember(TypeDefinitionContext defCtx, MethodDefinitionHandle methodHandle)
         {
-            var signature = GetMethodDefinitionSignature(mdReader, methodHandle, typeDef, typeArguments);
+            var signature = GetMethodDefinitionSignature(defCtx, methodHandle);
             return _signatures.Add(signature);
         }
 
-        public bool IsEffectiveMember(MetadataReader mdReader, PropertyDefinitionHandle propertyHandle, TypeDefinition typeDef, IEnumerable<string> typeArguments)
+        public bool IsEffectiveMember(TypeDefinitionContext defCtx, PropertyDefinitionHandle propertyHandle)
         {
-            var signature = GetPropertyDefinitionSignature(mdReader, propertyHandle, typeDef, typeArguments);
+            var signature = GetPropertyDefinitionSignature(defCtx, propertyHandle);
             return _signatures.Add(signature);
         }
 
@@ -68,23 +69,23 @@ namespace MemberLens.MemberSignatures
             return $"F:{name}";
         }
 
-        public string GetMethodDefinitionSignature(MetadataReader mdReader, MethodDefinitionHandle methodHandle, TypeDefinition typeDef, IEnumerable<string> typeArguments)
+        public string GetMethodDefinitionSignature(TypeDefinitionContext defCtx, MethodDefinitionHandle methodHandle)
         {
-            var methodDef = mdReader.GetMethodDefinition(methodHandle);
-            var name = mdReader.GetString(methodDef.Name);
-            var genericContext = new MemberSignatureGenericContext(mdReader, methodHandle, typeDef, typeArguments);
+            var methodDef = defCtx.MetadataReader.GetMethodDefinition(methodHandle);
+            var name = defCtx.MetadataReader.GetString(methodDef.Name);
+            var genericContext = new MemberSignatureGenericContext(defCtx, methodHandle);
             var provider = new MemberSignatureTypeProvider();
             var sig = methodDef.DecodeSignature(provider, genericContext);
             var parameters = string.Join(",", sig.ParameterTypes);
             return $"M:{name}({parameters})";
         }
 
-        public string GetPropertyDefinitionSignature(MetadataReader mdReader, PropertyDefinitionHandle propHandle, TypeDefinition typeDef, IEnumerable<string> typeArguments)
+        public string GetPropertyDefinitionSignature(TypeDefinitionContext defCtx, PropertyDefinitionHandle propHandle)
         {
-            var propDef = mdReader.GetPropertyDefinition(propHandle);
-            var name = mdReader.GetString(propDef.Name);
+            var propDef = defCtx.MetadataReader.GetPropertyDefinition(propHandle);
+            var name = defCtx.MetadataReader.GetString(propDef.Name);
             var provider = new MemberSignatureTypeProvider();
-            var genericContext = new MemberSignatureGenericContext(mdReader, default, typeDef, typeArguments);
+            var genericContext = new MemberSignatureGenericContext(defCtx);
             var sig = propDef.DecodeSignature(provider, genericContext);
 
             if (sig.ParameterTypes.Length > 0)

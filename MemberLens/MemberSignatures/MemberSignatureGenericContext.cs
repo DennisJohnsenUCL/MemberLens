@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Reflection.Metadata;
+using MemberLens.MetadataMembers;
 
 namespace MemberLens.MemberSignatures
 {
@@ -10,21 +11,19 @@ namespace MemberLens.MemberSignatures
         public TypeDefinition TypeDefinition { get; }
         public IEnumerable<string> TypeArguments { get; }
 
-        public MemberSignatureGenericContext() { }
-
-        public MemberSignatureGenericContext(MetadataReader reader, MethodDefinitionHandle methodHandle, TypeDefinition typeDef, IEnumerable<string> typeArguments)
+        public MemberSignatureGenericContext(TypeDefinitionContext defCtx, MethodDefinitionHandle methodHandle)
         {
-            Reader = reader;
+            Reader = defCtx.MetadataReader;
+            TypeDefinition = defCtx.TypeDefinition;
+            TypeArguments = defCtx.TypeArguments;
             MethodHandle = methodHandle;
-            TypeDefinition = typeDef;
-            TypeArguments = typeArguments;
         }
 
-        public MemberSignatureGenericContext(MetadataReader reader, TypeDefinition typeDef, IEnumerable<string> typeArguments)
+        public MemberSignatureGenericContext(TypeDefinitionContext defCtx)
         {
-            Reader = reader;
-            TypeDefinition = typeDef;
-            TypeArguments = typeArguments;
+            Reader = defCtx.MetadataReader;
+            TypeDefinition = defCtx.TypeDefinition;
+            TypeArguments = defCtx.TypeArguments;
         }
     }
 }

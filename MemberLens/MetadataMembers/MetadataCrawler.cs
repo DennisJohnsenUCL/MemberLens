@@ -83,7 +83,7 @@ namespace MemberLens.MetadataMembers
 
                 //TODO: Use specific provider and context instead here?
                 var provider = new MemberSignatureTypeProvider();
-                var genericContext = new MemberSignatureGenericContext(defCtx.MetadataReader, defCtx.TypeDefinition, defCtx.TypeArguments);
+                var genericContext = new MemberSignatureGenericContext(defCtx);
                 typeSpec.DecodeSignature(provider, genericContext);
                 var typeArguments = provider.LastTypeArguments;
 
