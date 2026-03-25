@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection.Metadata;
@@ -9,8 +10,10 @@ using Microsoft.CodeAnalysis;
 
 namespace MemberLens.MetadataMembers
 {
-    internal class MetadataCrawler
+    internal class MetadataCrawler : IDisposable
     {
+        private readonly HashSet<IDisposable> _readers = new HashSet<IDisposable>();
+
         private readonly Compilation _compilation;
 
         public MetadataCrawler(Compilation compilation)
@@ -120,7 +123,9 @@ namespace MemberLens.MetadataMembers
             if (metadataRef?.FilePath == null) return NoContext();
 
             var stream = File.OpenRead(metadataRef.FilePath);
+            _readers.Add(stream);
             var extPeReader = new PEReader(stream, PEStreamOptions.PrefetchMetadata);
+            _readers.Add(extPeReader);
             var extMdReader = extPeReader.GetMetadataReader();
 
             var sourceName = mdReader.GetString(typeRef.Name);
@@ -152,6 +157,11 @@ namespace MemberLens.MetadataMembers
 
             var ns = reader.GetString(typeRef.Namespace);
             return string.IsNullOrEmpty(ns) ? name : ns + "." + name;
+        }
+
+        public void Dispose()
+        {
+            foreach (var reader in _readers) reader.Dispose();
         }
     }
 }

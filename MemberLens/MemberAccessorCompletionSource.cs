@@ -38,13 +38,15 @@ namespace MemberLens
             var metadataCrawler = new MetadataCrawler(symCtx.Compilation);
             var metadataResolver = new MetadataResolver(metadataCrawler, symCtx.Compilation, accessorType);
             var symbolResolver = new SymbolResolver(accessorType, metadataResolver);
-            var completionItemBuilder = new CompletionItemBuilder(metadataResolver, symbolResolver, sourceType, accessorType, this);
 
-            var completionItems = completionItemBuilder.Build();
-            if (completionItems == null) return Empty;
+            using (var completionItemBuilder = new CompletionItemBuilder(metadataResolver, symbolResolver, sourceType, accessorType, this))
+            {
+                var completionItems = completionItemBuilder.Build();
+                if (completionItems == null) return Empty;
 
-            var completionContext = new CompletionContext(completionItems.ToImmutableArray());
-            return completionContext;
+                var completionContext = new CompletionContext(completionItems.ToImmutableArray());
+                return completionContext;
+            }
         }
 
         public async Task<object> GetDescriptionAsync(IAsyncCompletionSession session, CompletionItem item, CancellationToken token)

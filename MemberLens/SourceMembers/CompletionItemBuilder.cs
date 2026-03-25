@@ -13,7 +13,7 @@ using Microsoft.VisualStudio.Text.Adornments;
 
 namespace MemberLens.SourceMembers
 {
-    internal class CompletionItemBuilder
+    internal class CompletionItemBuilder : IDisposable
     {
         private readonly static Dictionary<string, IEnumerable<CompletionItem>> _itemCache = new Dictionary<string, IEnumerable<CompletionItem>>();
 
@@ -138,6 +138,11 @@ namespace MemberLens.SourceMembers
 
                 return refreshedItem;
             });
+        }
+
+        public void Dispose()
+        {
+            _metadataResolver.Dispose();
         }
     }
 }
