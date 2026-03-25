@@ -24,6 +24,7 @@
                 case "void":
                 case "nint":
                 case "nuint":
+                case "delegate":
                     return true;
                 default:
                     return false;

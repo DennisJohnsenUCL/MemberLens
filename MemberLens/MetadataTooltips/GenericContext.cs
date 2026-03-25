@@ -1,4 +1,5 @@
-﻿using System.Collections.Immutable;
+﻿using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Reflection.Metadata;
 
 namespace MemberLens.MetadataTooltips
@@ -6,10 +7,6 @@ namespace MemberLens.MetadataTooltips
     //TODO: Rename with specific name
     internal class GenericContext
     {
-        public static readonly GenericContext Empty = new GenericContext(
-            ImmutableArray<string>.Empty,
-            ImmutableArray<string>.Empty);
-
         public ImmutableArray<string> TypeParameters { get; }
         public ImmutableArray<string> MethodParameters { get; }
 
@@ -24,13 +21,24 @@ namespace MemberLens.MetadataTooltips
         public static GenericContext Create(
             MetadataReader reader,
             TypeDefinitionHandle typeHandle,
+            IEnumerable<string> typeArguments,
             MethodDefinitionHandle methodHandle = default)
         {
-            var typeDef = reader.GetTypeDefinition(typeHandle);
-            var typeParams = typeDef.GetGenericParameters();
-            var typeNames = ImmutableArray.CreateBuilder<string>(typeParams.Count);
-            foreach (var gp in typeParams)
-                typeNames.Add(reader.GetString(reader.GetGenericParameter(gp).Name));
+            ImmutableArray<string> typeNames;
+
+            if (typeArguments != null)
+            {
+                typeNames = typeArguments.ToImmutableArray();
+            }
+            else
+            {
+                var typeDef = reader.GetTypeDefinition(typeHandle);
+                var typeParams = typeDef.GetGenericParameters();
+                var typeNamesBuilder = ImmutableArray.CreateBuilder<string>(typeParams.Count);
+                foreach (var gp in typeParams)
+                    typeNamesBuilder.Add(reader.GetString(reader.GetGenericParameter(gp).Name));
+                typeNames = typeNamesBuilder.MoveToImmutable();
+            }
 
             var methodNames = ImmutableArray<string>.Empty;
             if (!methodHandle.IsNil)
@@ -43,7 +51,7 @@ namespace MemberLens.MetadataTooltips
                 methodNames = builder.MoveToImmutable();
             }
 
-            return new GenericContext(typeNames.MoveToImmutable(), methodNames);
+            return new GenericContext(typeNames, methodNames);
         }
     }
 }

@@ -13,16 +13,13 @@ namespace MemberLens.MetadataMembers
 {
     internal class MetadataResolver : IDisposable
     {
-        private readonly Compilation _compilation;
         private readonly AccessorType _accessorType;
 
         private readonly MetadataCrawler _crawler;
 
-        public MetadataResolver(MetadataCrawler crawler, Compilation compilation, AccessorType accessorType)
+        public MetadataResolver(MetadataCrawler crawler, AccessorType accessorType)
         {
-            _compilation = compilation;
             _accessorType = accessorType;
-
             _crawler = crawler;
         }
 
@@ -69,7 +66,7 @@ namespace MemberLens.MetadataMembers
                 {
                     var methodDef = defCtx.MetadataReader.GetMethodDefinition(methodHandle);
                     var methodName = defCtx.MetadataReader.GetString(methodDef.Name);
-                    return new SourceMemberInfo(methodName, MemberDefinitionInfoFactory.FromMethod(defCtx.MetadataReader, methodHandle));
+                    return new SourceMemberInfo(methodName, MemberDefinitionInfoFactory.FromMethod(defCtx.MetadataReader, methodHandle, defCtx.TypeArguments));
                 })
                 .ToArray();
 

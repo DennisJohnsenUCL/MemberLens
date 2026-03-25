@@ -36,7 +36,7 @@ namespace MemberLens
             var accessorType = (AccessorType)(int)constructorArgs[0].Value;
 
             var metadataCrawler = new MetadataCrawler(symCtx.Compilation);
-            var metadataResolver = new MetadataResolver(metadataCrawler, symCtx.Compilation, accessorType);
+            var metadataResolver = new MetadataResolver(metadataCrawler, accessorType);
             var symbolResolver = new SymbolResolver(accessorType, metadataResolver);
 
             using (var completionItemBuilder = new CompletionItemBuilder(metadataResolver, symbolResolver, sourceType, accessorType, this))

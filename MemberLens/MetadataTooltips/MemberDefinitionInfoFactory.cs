@@ -8,7 +8,8 @@ namespace MemberLens.MetadataTooltips
     {
         public static MemberDefinitionInfo FromMethod(
             MetadataReader reader,
-            MethodDefinitionHandle methodHandle)
+            MethodDefinitionHandle methodHandle,
+            IEnumerable<string> typeArguments)
         {
             var methodDef = reader.GetMethodDefinition(methodHandle);
             var info = new MemberDefinitionInfo { Kind = MemberKind.Method };
@@ -17,7 +18,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var methodName = reader.GetString(methodDef.Name);
 
-            var context = GenericContext.Create(reader, declaringTypeHandle, methodHandle);
+            var context = GenericContext.Create(reader, declaringTypeHandle, typeArguments, methodHandle);
             var provider = new SignatureTypeProvider(reader);
             var sig = methodDef.DecodeSignature(provider, context);
 
@@ -49,7 +50,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var fieldName = reader.GetString(fieldDef.Name);
 
-            var context = GenericContext.Create(reader, declaringTypeHandle);
+            var context = GenericContext.Create(reader, declaringTypeHandle, null);
             var provider = new SignatureTypeProvider(reader);
             var fieldType = fieldDef.DecodeSignature(provider, context);
 
@@ -84,7 +85,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var propertyName = reader.GetString(propertyDef.Name);
 
-            var context = GenericContext.Create(reader, declaringTypeHandle);
+            var context = GenericContext.Create(reader, declaringTypeHandle, null);
             var provider = new SignatureTypeProvider(reader);
             var sig = propertyDef.DecodeSignature(provider, context);
 
@@ -223,7 +224,32 @@ namespace MemberLens.MetadataTooltips
 
                     if (paramType.StartsWith("ref "))
                     {
-                        info.SignatureParts.Add(DisplayPart.Keyword("ref"));
+                        bool isIn = (param.Attributes & System.Reflection.ParameterAttributes.In) != 0;
+                        bool isOut = (param.Attributes & System.Reflection.ParameterAttributes.Out) != 0;
+
+                        if (isOut)
+                        {
+                            info.SignatureParts.Add(DisplayPart.Keyword("out"));
+                        }
+                        else if (isIn)
+                        {
+                            bool isRefReadonly = HasAttribute(reader, param.GetCustomAttributes(),
+                                "System.Runtime.CompilerServices", "RequiresLocationAttribute");
+
+                            if (isRefReadonly)
+                            {
+                                info.SignatureParts.Add(DisplayPart.Keyword("ref readonly"));
+                            }
+                            else
+                            {
+                                info.SignatureParts.Add(DisplayPart.Keyword("in"));
+                            }
+                        }
+                        else
+                        {
+                            info.SignatureParts.Add(DisplayPart.Keyword("ref"));
+                        }
+
                         info.SignatureParts.Add(DisplayPart.Space());
                         paramType = paramType.Substring(4);
                     }
@@ -275,6 +301,30 @@ namespace MemberLens.MetadataTooltips
             }
 
             info.SignatureParts.Add(DisplayPart.Punctuation("}"));
+        }
+
+        private static bool HasAttribute(
+            MetadataReader reader,
+            CustomAttributeHandleCollection attributes,
+            string namespaceName,
+            string typeName)
+        {
+            foreach (var attrHandle in attributes)
+            {
+                var attr = reader.GetCustomAttribute(attrHandle);
+                if (attr.Constructor.Kind == HandleKind.MemberReference)
+                {
+                    var ctor = reader.GetMemberReference((MemberReferenceHandle)attr.Constructor);
+                    if (ctor.Parent.Kind == HandleKind.TypeReference)
+                    {
+                        var typeRef = reader.GetTypeReference((TypeReferenceHandle)ctor.Parent);
+                        if (reader.GetString(typeRef.Namespace) == namespaceName
+                            && reader.GetString(typeRef.Name) == typeName)
+                            return true;
+                    }
+                }
+            }
+            return false;
         }
     }
 }
