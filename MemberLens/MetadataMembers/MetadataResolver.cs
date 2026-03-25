@@ -19,13 +19,12 @@ namespace MemberLens.MetadataMembers
 
         private readonly MetadataCrawler _crawler;
 
-        public MetadataResolver(Compilation compilation, AccessorType accessorType)
+        public MetadataResolver(MetadataCrawler crawler, Compilation compilation, AccessorType accessorType)
         {
             _compilation = compilation;
             _accessorType = accessorType;
 
-            //TODO: Move up
-            _crawler = new MetadataCrawler(_compilation);
+            _crawler = crawler;
         }
 
         public string GetRootKey(INamedTypeSymbol symbol) => BuildFullName(symbol) + _accessorType.ToString();

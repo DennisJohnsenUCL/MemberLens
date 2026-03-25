@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MemberLens.Attributes;
+using MemberLens.MetadataMembers;
 using MemberLens.MetadataTooltips;
 using MemberLens.SourceMembers;
 using Microsoft.CodeAnalysis;
@@ -34,7 +35,12 @@ namespace MemberLens
 
             var accessorType = (AccessorType)(int)constructorArgs[0].Value;
 
-            var completionItems = new CompletionItemBuilder(sourceType, accessorType, this, symCtx.Compilation).Build();
+            var metadataCrawler = new MetadataCrawler(symCtx.Compilation);
+            var metadataResolver = new MetadataResolver(metadataCrawler, symCtx.Compilation, accessorType);
+            var symbolResolver = new SymbolResolver(accessorType, metadataResolver);
+            var completionItemBuilder = new CompletionItemBuilder(metadataResolver, symbolResolver, sourceType, accessorType, this);
+
+            var completionItems = completionItemBuilder.Build();
             if (completionItems == null) return Empty;
 
             var completionContext = new CompletionContext(completionItems.ToImmutableArray());

@@ -8,6 +8,13 @@ namespace MemberLens.MemberSignatures
 {
     internal class MemberSignatureContext
     {
+        private readonly MemberSignatureTypeProvider _provider;
+
+        public MemberSignatureContext()
+        {
+            _provider = new MemberSignatureTypeProvider();
+        }
+
         private readonly HashSet<string> _signatures = new HashSet<string>();
 
         public bool IsEffectiveMember(ISymbol symbol)
@@ -74,8 +81,7 @@ namespace MemberLens.MemberSignatures
             var methodDef = defCtx.MetadataReader.GetMethodDefinition(methodHandle);
             var name = defCtx.MetadataReader.GetString(methodDef.Name);
             var genericContext = new MemberSignatureGenericContext(defCtx, methodHandle);
-            var provider = new MemberSignatureTypeProvider();
-            var sig = methodDef.DecodeSignature(provider, genericContext);
+            var sig = methodDef.DecodeSignature(_provider, genericContext);
             var parameters = string.Join(",", sig.ParameterTypes);
             return $"M:{name}({parameters})";
         }
@@ -84,9 +90,8 @@ namespace MemberLens.MemberSignatures
         {
             var propDef = defCtx.MetadataReader.GetPropertyDefinition(propHandle);
             var name = defCtx.MetadataReader.GetString(propDef.Name);
-            var provider = new MemberSignatureTypeProvider();
             var genericContext = new MemberSignatureGenericContext(defCtx);
-            var sig = propDef.DecodeSignature(provider, genericContext);
+            var sig = propDef.DecodeSignature(_provider, genericContext);
 
             if (sig.ParameterTypes.Length > 0)
             {

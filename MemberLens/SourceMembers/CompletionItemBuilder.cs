@@ -26,10 +26,11 @@ namespace MemberLens.SourceMembers
         private readonly SymbolResolver _sourceResolver;
 
         public CompletionItemBuilder(
+            MetadataResolver metadataResolver,
+            SymbolResolver symbolResolver,
             INamedTypeSymbol sourceType,
             AccessorType accessorType,
-            MemberAccessorCompletionSource source,
-            Compilation compilation)
+            MemberAccessorCompletionSource source)
         {
             _sourceType = sourceType;
             _accessorType = accessorType;
@@ -37,14 +38,12 @@ namespace MemberLens.SourceMembers
 
             _icon = GetIcon();
 
-            //TODO: Move these up?
-            _metadataResolver = new MetadataResolver(compilation, _accessorType);
-            _sourceResolver = new SymbolResolver(_accessorType, _metadataResolver);
+            _metadataResolver = metadataResolver;
+            _sourceResolver = symbolResolver;
         }
 
         public IEnumerable<CompletionItem> Build()
         {
-            //TODO: Move this up?
             var sigCtx = new MemberSignatureContext();
 
             if (_sourceType.Locations[0].IsInSource)

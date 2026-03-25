@@ -81,7 +81,6 @@ namespace MemberLens.MetadataMembers
                 if (typeHandle == null || typeHandle.IsNil || typeHandle == default)
                     return null;
 
-                //TODO: Use specific provider and context instead here?
                 var provider = new MemberSignatureTypeProvider();
                 var genericContext = new MemberSignatureGenericContext(defCtx);
                 typeSpec.DecodeSignature(provider, genericContext);
