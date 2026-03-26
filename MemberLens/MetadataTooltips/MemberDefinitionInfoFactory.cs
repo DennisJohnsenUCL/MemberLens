@@ -25,7 +25,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var methodName = reader.GetString(methodDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, typeArguments, _sourceUnbound, methodHandle);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, typeArguments, methodHandle);
             var provider = new TooltipSignatureTypeProvider();
             var sig = methodDef.DecodeSignature(provider, context);
 
@@ -57,7 +57,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var fieldName = reader.GetString(fieldDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null, _sourceUnbound);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null);
             var provider = new TooltipSignatureTypeProvider();
             var fieldType = fieldDef.DecodeSignature(provider, context);
 
@@ -92,7 +92,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var propertyName = reader.GetString(propertyDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null, _sourceUnbound);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null);
             var provider = new TooltipSignatureTypeProvider();
             var sig = propertyDef.DecodeSignature(provider, context);
 
@@ -123,13 +123,14 @@ namespace MemberLens.MetadataTooltips
             return declaringTypeName;
         }
 
-        private static HashSet<string> BuildTypeParameterNames(TooltipGenericContext context)
+        private HashSet<string> BuildTypeParameterNames(TooltipGenericContext context)
         {
             var names = new HashSet<string>();
-            foreach (var tp in context.OriginalTypeParameters)
-                names.Add(tp);
-            foreach (var mp in context.MethodParameters)
-                names.Add(mp);
+
+            if (_sourceUnbound) foreach (var tp in context.TypeParameters) names.Add(tp);
+
+            foreach (var mp in context.MethodParameters) names.Add(mp);
+
             return names;
         }
 
@@ -147,10 +148,9 @@ namespace MemberLens.MetadataTooltips
                         info.SignatureParts.Add(DisplayPart.Space());
                     }
 
-                    var hasSubstitution = _sourceUnbound == false && context.TypeParameters != null && i < context.TypeParameters.Length;
-                    var param = hasSubstitution ? context.TypeParameters[i] : context.OriginalTypeParameters[i];
+                    var param = context.TypeParameters[i];
 
-                    if (!hasSubstitution)
+                    if (_sourceUnbound)
                         info.SignatureParts.Add(DisplayPart.TypeParameterName(param));
                     else if (MetadataTooltipHelper.IsCSharpTypeKeyword(param))
                         info.SignatureParts.Add(DisplayPart.Keyword(param));
