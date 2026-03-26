@@ -13,14 +13,15 @@ namespace MemberLens.MetadataMembers
 {
     internal class MetadataResolver : IDisposable
     {
+        private readonly MetadataCrawler _crawler;
+        private readonly MemberDefinitionInfoFactory _infoFactory;
         private readonly AccessorType _accessorType;
 
-        private readonly MetadataCrawler _crawler;
-
-        public MetadataResolver(MetadataCrawler crawler, AccessorType accessorType)
+        public MetadataResolver(MetadataCrawler crawler, MemberDefinitionInfoFactory infoFactory, AccessorType accessorType)
         {
-            _accessorType = accessorType;
             _crawler = crawler;
+            _infoFactory = infoFactory;
+            _accessorType = accessorType;
         }
 
         public string GetRootKey(INamedTypeSymbol symbol) => MetadataHelper.BuildFullName(symbol) + _accessorType.ToString();
@@ -48,7 +49,7 @@ namespace MemberLens.MetadataMembers
                 {
                     var fieldDef = defCtx.MetadataReader.GetFieldDefinition(fieldHandle);
                     var fieldName = defCtx.MetadataReader.GetString(fieldDef.Name);
-                    return new SourceMemberInfo(fieldName, MemberDefinitionInfoFactory.FromField(defCtx.MetadataReader, fieldHandle));
+                    return new SourceMemberInfo(fieldName, _infoFactory.FromField(defCtx.MetadataReader, fieldHandle));
                 })
                 .ToArray();
 
@@ -66,7 +67,7 @@ namespace MemberLens.MetadataMembers
                 {
                     var methodDef = defCtx.MetadataReader.GetMethodDefinition(methodHandle);
                     var methodName = defCtx.MetadataReader.GetString(methodDef.Name);
-                    return new SourceMemberInfo(methodName, MemberDefinitionInfoFactory.FromMethod(defCtx.MetadataReader, methodHandle, defCtx.TypeArguments));
+                    return new SourceMemberInfo(methodName, _infoFactory.FromMethod(defCtx.MetadataReader, methodHandle, defCtx.TypeArguments));
                 })
                 .ToArray();
 

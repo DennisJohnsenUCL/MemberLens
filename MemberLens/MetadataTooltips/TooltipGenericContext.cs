@@ -24,6 +24,7 @@ namespace MemberLens.MetadataTooltips
             MetadataReader reader,
             TypeDefinitionHandle typeHandle,
             IEnumerable<string> typeArguments,
+            bool unbound,
             MethodDefinitionHandle methodHandle = default)
         {
             var typeDef = reader.GetTypeDefinition(typeHandle);
@@ -31,7 +32,7 @@ namespace MemberLens.MetadataTooltips
             var originalTypeNames = typeParams.Select(x => reader.GetString(reader.GetGenericParameter(x).Name));
 
             IEnumerable<string> typeNames = null;
-            if (typeArguments != null)
+            if (!unbound && typeArguments != null)
             {
                 typeNames = typeArguments.Select(x =>
                 {
@@ -39,10 +40,7 @@ namespace MemberLens.MetadataTooltips
                     return index >= 0 ? x.Substring(index + 1) : x;
                 });
             }
-            else
-            {
-                typeNames = originalTypeNames;
-            }
+            else typeNames = originalTypeNames;
 
             IEnumerable<string> methodNames = null;
             if (!methodHandle.IsNil)

@@ -10,13 +10,13 @@ namespace MemberLens
 {
     internal class SymbolResolver
     {
-        private readonly AccessorType _accessorType;
         private readonly MetadataResolver _metadataResolver;
+        private readonly AccessorType _accessorType;
 
-        public SymbolResolver(AccessorType accessorType, MetadataResolver metadataResolver)
+        public SymbolResolver(MetadataResolver metadataResolver, AccessorType accessorType)
         {
-            _accessorType = accessorType;
             _metadataResolver = metadataResolver;
+            _accessorType = accessorType;
         }
 
         public IEnumerable<SourceMemberInfo> GetSourceMemberInfos(INamedTypeSymbol symbol, MemberSignatureContext sigCtx, bool root)

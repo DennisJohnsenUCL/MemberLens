@@ -33,11 +33,15 @@ namespace MemberLens
             var sourceType = CompletionSourceHelper.GetSourceType(methodSymbol, constructorArgs);
             if (sourceType == null) return Empty;
 
+            var unbound = sourceType.IsUnboundGenericType;
+            if (unbound) sourceType = sourceType.OriginalDefinition;
+
             var accessorType = (AccessorType)(int)constructorArgs[0].Value;
 
             var metadataCrawler = new MetadataCrawler(symCtx.Compilation);
-            var metadataResolver = new MetadataResolver(metadataCrawler, accessorType);
-            var symbolResolver = new SymbolResolver(accessorType, metadataResolver);
+            var infoFactory = new MemberDefinitionInfoFactory(unbound);
+            var metadataResolver = new MetadataResolver(metadataCrawler, infoFactory, accessorType);
+            var symbolResolver = new SymbolResolver(metadataResolver, accessorType);
 
             using (var completionItemBuilder = new CompletionItemBuilder(metadataResolver, symbolResolver, sourceType, accessorType, this))
             {

@@ -4,9 +4,16 @@ using System.Reflection.Metadata;
 
 namespace MemberLens.MetadataTooltips
 {
-    internal static class MemberDefinitionInfoFactory
+    internal class MemberDefinitionInfoFactory
     {
-        public static MemberDefinitionInfo FromMethod(
+        private readonly bool _sourceUnbound;
+
+        public MemberDefinitionInfoFactory(bool sourceUnbound)
+        {
+            _sourceUnbound = sourceUnbound;
+        }
+
+        public MemberDefinitionInfo FromMethod(
             MetadataReader reader,
             MethodDefinitionHandle methodHandle,
             IEnumerable<string> typeArguments)
@@ -18,7 +25,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var methodName = reader.GetString(methodDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, typeArguments, methodHandle);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, typeArguments, _sourceUnbound, methodHandle);
             var provider = new TooltipSignatureTypeProvider();
             var sig = methodDef.DecodeSignature(provider, context);
 
@@ -39,7 +46,7 @@ namespace MemberLens.MetadataTooltips
             return info;
         }
 
-        public static MemberDefinitionInfo FromField(
+        public MemberDefinitionInfo FromField(
             MetadataReader reader,
             FieldDefinitionHandle fieldHandle)
         {
@@ -50,7 +57,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var fieldName = reader.GetString(fieldDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null, _sourceUnbound);
             var provider = new TooltipSignatureTypeProvider();
             var fieldType = fieldDef.DecodeSignature(provider, context);
 
@@ -67,7 +74,7 @@ namespace MemberLens.MetadataTooltips
             return info;
         }
 
-        public static MemberDefinitionInfo FromProperty(
+        public MemberDefinitionInfo FromProperty(
             MetadataReader reader,
             PropertyDefinitionHandle propertyHandle)
         {
@@ -85,7 +92,7 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var propertyName = reader.GetString(propertyDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null);
+            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null, _sourceUnbound);
             var provider = new TooltipSignatureTypeProvider();
             var sig = propertyDef.DecodeSignature(provider, context);
 
@@ -126,7 +133,7 @@ namespace MemberLens.MetadataTooltips
             return names;
         }
 
-        private static void AddDeclaringType(MemberDefinitionInfo info, string declaringTypeName, TooltipGenericContext context)
+        private void AddDeclaringType(MemberDefinitionInfo info, string declaringTypeName, TooltipGenericContext context)
         {
             info.SignatureParts.Add(DisplayPart.Type(declaringTypeName));
             if (context.TypeParameters.Length > 0)
@@ -140,7 +147,7 @@ namespace MemberLens.MetadataTooltips
                         info.SignatureParts.Add(DisplayPart.Space());
                     }
 
-                    var hasSubstitution = context.TypeParameters != null && i < context.TypeParameters.Length;
+                    var hasSubstitution = _sourceUnbound == false && context.TypeParameters != null && i < context.TypeParameters.Length;
                     var param = hasSubstitution ? context.TypeParameters[i] : context.OriginalTypeParameters[i];
 
                     if (!hasSubstitution)
@@ -233,8 +240,8 @@ namespace MemberLens.MetadataTooltips
 
                     if (paramType.StartsWith("ref "))
                     {
-                        bool isIn = (param.Attributes & System.Reflection.ParameterAttributes.In) != 0;
-                        bool isOut = (param.Attributes & System.Reflection.ParameterAttributes.Out) != 0;
+                        bool isIn = (param.Attributes & ParameterAttributes.In) != 0;
+                        bool isOut = (param.Attributes & ParameterAttributes.Out) != 0;
 
                         if (isOut)
                         {

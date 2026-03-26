@@ -12,10 +12,8 @@ namespace MemberLens.MemberSignatures
         public IEnumerable<string> TypeArguments { get; }
 
         public MemberSignatureGenericContext(TypeDefinitionContext defCtx, MethodDefinitionHandle methodHandle)
+            : this(defCtx)
         {
-            Reader = defCtx.MetadataReader;
-            TypeDefinition = defCtx.TypeDefinition;
-            TypeArguments = defCtx.TypeArguments;
             MethodHandle = methodHandle;
         }
 

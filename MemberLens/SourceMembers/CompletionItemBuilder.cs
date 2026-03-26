@@ -17,13 +17,13 @@ namespace MemberLens.SourceMembers
     {
         private readonly static Dictionary<string, IEnumerable<CompletionItem>> _itemCache = new Dictionary<string, IEnumerable<CompletionItem>>();
 
+        private readonly MetadataResolver _metadataResolver;
+        private readonly SymbolResolver _symbolResolver;
         private readonly INamedTypeSymbol _sourceType;
         private readonly AccessorType _accessorType;
         private readonly MemberAccessorCompletionSource _source;
 
         private readonly ImageElement _icon;
-        private readonly MetadataResolver _metadataResolver;
-        private readonly SymbolResolver _sourceResolver;
 
         public CompletionItemBuilder(
             MetadataResolver metadataResolver,
@@ -32,14 +32,13 @@ namespace MemberLens.SourceMembers
             AccessorType accessorType,
             MemberAccessorCompletionSource source)
         {
+            _metadataResolver = metadataResolver;
+            _symbolResolver = symbolResolver;
             _sourceType = sourceType;
             _accessorType = accessorType;
             _source = source;
 
             _icon = GetIcon();
-
-            _metadataResolver = metadataResolver;
-            _sourceResolver = symbolResolver;
         }
 
         public IEnumerable<CompletionItem> Build()
@@ -48,7 +47,7 @@ namespace MemberLens.SourceMembers
 
             if (_sourceType.Locations[0].IsInSource)
             {
-                var memberInfos = _sourceResolver.GetSourceMemberInfos(_sourceType, sigCtx, root: true);
+                var memberInfos = _symbolResolver.GetSourceMemberInfos(_sourceType, sigCtx, root: true);
 
                 return BuildMemberCompletionItems(memberInfos);
             }
