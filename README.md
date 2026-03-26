@@ -1,6 +1,6 @@
 # MemberLens
 
-**Intelligent IntelliSense completions for string-based member accessors in C#.**
+**IntelliSense completions for string-based member accessors in C#.**
 
 MemberLens brings autocompletion to methods that accept member names as strings — eliminating typos, reducing guesswork, and keeping your code in sync with your types.
 

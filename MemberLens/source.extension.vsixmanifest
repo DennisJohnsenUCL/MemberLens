@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="MemberLens.772562cf-8720-424a-8882-2a0b393a051d" Version="1.0" Language="en-US" Publisher="DennisJohnsen" />
+        <Identity Id="MemberLens.772562cf-8720-424a-8882-2a0b393a051d" Version="1.1.0" Language="en-US" Publisher="DennisJohnsen" />
         <DisplayName>MemberLens</DisplayName>
         <Description xml:space="preserve">Provide autocomplete suggestions for MemberAccessor-decorated string parameters.</Description>
         <License>LICENSE.txt</License>
