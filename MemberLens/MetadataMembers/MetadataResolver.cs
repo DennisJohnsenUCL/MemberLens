@@ -29,7 +29,7 @@ namespace MemberLens.MetadataMembers
         public IEnumerable<SourceMemberInfo> GetMetadataMemberInfos(INamedTypeSymbol symbol, MemberSignatureContext sigCtx, IEnumerable<string> typeArguments, bool root)
         {
             var defCtx = _crawler.GetTypeDefinitionFromSymbol(symbol);
-            if (defCtx == null) return null;
+            if (defCtx == null) return Enumerable.Empty<SourceMemberInfo>();
             defCtx.TypeArguments = typeArguments;
 
             if (_accessorType == AccessorType.Field)
@@ -38,7 +38,7 @@ namespace MemberLens.MetadataMembers
             else if (_accessorType == AccessorType.Method)
                 return GetMethodInfos(defCtx, sigCtx, root);
 
-            else return null;
+            else return Enumerable.Empty<SourceMemberInfo>();
         }
 
         private IEnumerable<SourceMemberInfo> GetFieldInfos(TypeDefinitionContext defCtx, MemberSignatureContext sigCtx, bool root)
@@ -49,7 +49,7 @@ namespace MemberLens.MetadataMembers
                 {
                     var fieldDef = defCtx.MetadataReader.GetFieldDefinition(fieldHandle);
                     var fieldName = defCtx.MetadataReader.GetString(fieldDef.Name);
-                    return new SourceMemberInfo(fieldName, _infoFactory.FromField(defCtx.MetadataReader, fieldHandle));
+                    return new SourceMemberInfo(fieldName, _infoFactory.FromField(defCtx.MetadataReader, fieldHandle, defCtx.TypeArguments));
                 })
                 .ToArray();
 

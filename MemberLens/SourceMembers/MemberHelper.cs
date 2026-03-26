@@ -4,7 +4,7 @@
     {
         public static bool IsCoreLibAssembly(string assemblyName)
         {
-            return assemblyName.StartsWith("System.") || assemblyName.StartsWith("Microsoft.");
+            return assemblyName.StartsWith("System") || assemblyName.StartsWith("Microsoft");
         }
 
         public static bool IsBackingField(string name)

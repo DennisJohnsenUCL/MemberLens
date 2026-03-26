@@ -6,46 +6,50 @@ namespace MemberLens.MetadataTooltips
 {
     internal class TooltipGenericContext
     {
-        public string[] TypeParameters { get; }
-        public string[] MethodParameters { get; }
+        public List<string> TypeArguments { get; }
+        public List<string> MethodTypeParameters { get; }
+        public bool SourceUnbound { get; }
 
-        public TooltipGenericContext(
-            IEnumerable<string> typeParameters,
-            IEnumerable<string> methodParameters)
+        public HashSet<string> AllTypeParameterNames { get; }
+
+        private TooltipGenericContext(
+            List<string> typeArguments,
+            List<string> methodTypeParameters,
+            bool sourceUnbound)
         {
-            TypeParameters = typeParameters.ToArray();
-            MethodParameters = methodParameters.ToArray();
+            TypeArguments = typeArguments;
+            MethodTypeParameters = methodTypeParameters;
+            SourceUnbound = sourceUnbound;
+
+            AllTypeParameterNames = new HashSet<string>(methodTypeParameters);
+            if (sourceUnbound)
+                AllTypeParameterNames.UnionWith(typeArguments);
         }
 
         public static TooltipGenericContext Create(
             MetadataReader reader,
-            TypeDefinitionHandle typeHandle,
             IEnumerable<string> typeArguments,
+            bool sourceUnbound,
             MethodDefinitionHandle methodHandle = default)
         {
-            var typeDef = reader.GetTypeDefinition(typeHandle);
-            var typeParams = typeDef.GetGenericParameters();
-            var originalTypeNames = typeParams.Select(x => reader.GetString(reader.GetGenericParameter(x).Name));
-
-            IEnumerable<string> typeNames = null;
-            if (typeArguments != null)
-            {
-                typeNames = typeArguments.Select(x =>
+            var typeArgs = typeArguments != null
+                ? typeArguments.Select(x =>
                 {
                     var index = x.LastIndexOf('.');
                     return index >= 0 ? x.Substring(index + 1) : x;
-                });
-            }
+                }).ToList()
+                : new List<string>();
 
-            IEnumerable<string> methodNames = null;
+            var methodTypeParams = new List<string>();
             if (!methodHandle.IsNil)
             {
                 var methodDef = reader.GetMethodDefinition(methodHandle);
-                var methodParams = methodDef.GetGenericParameters();
-                methodNames = methodParams.Select(x => reader.GetString(reader.GetGenericParameter(x).Name));
+                methodTypeParams = methodDef.GetGenericParameters()
+                    .Select(x => reader.GetString(reader.GetGenericParameter(x).Name))
+                    .ToList();
             }
 
-            return new TooltipGenericContext(typeNames, methodNames);
+            return new TooltipGenericContext(typeArgs, methodTypeParams, sourceUnbound);
         }
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Reflection;
 using System.Reflection.Metadata;
 
@@ -25,15 +26,14 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var methodName = reader.GetString(methodDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, typeArguments, methodHandle);
+            var context = TooltipGenericContext.Create(reader, typeArguments, _sourceUnbound, methodHandle);
             var provider = new TooltipSignatureTypeProvider();
             var sig = methodDef.DecodeSignature(provider, context);
 
-            info.TypeParameterNames = BuildTypeParameterNames(context);
-
             AddMethodModifiers(info, methodDef.Attributes);
 
-            AddTypePart(info, sig.ReturnType);
+            AddTypeParts(info, sig.ReturnType);
+            info.SignatureParts.Add(DisplayPart.Space());
 
             AddDeclaringType(info, declaringTypeName, context);
 
@@ -48,7 +48,8 @@ namespace MemberLens.MetadataTooltips
 
         public MemberDefinitionInfo FromField(
             MetadataReader reader,
-            FieldDefinitionHandle fieldHandle)
+            FieldDefinitionHandle fieldHandle,
+            IEnumerable<string> typeArguments)
         {
             var fieldDef = reader.GetFieldDefinition(fieldHandle);
             var info = new MemberDefinitionInfo { Kind = MemberKind.Field };
@@ -57,15 +58,14 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var fieldName = reader.GetString(fieldDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null);
+            var context = TooltipGenericContext.Create(reader, typeArguments, _sourceUnbound);
             var provider = new TooltipSignatureTypeProvider();
             var fieldType = fieldDef.DecodeSignature(provider, context);
 
-            info.TypeParameterNames = BuildTypeParameterNames(context);
-
             AddFieldModifiers(info, fieldDef);
 
-            AddTypePart(info, fieldType);
+            AddTypeParts(info, fieldType);
+            info.SignatureParts.Add(DisplayPart.Space());
 
             AddDeclaringType(info, declaringTypeName, context);
 
@@ -76,7 +76,8 @@ namespace MemberLens.MetadataTooltips
 
         public MemberDefinitionInfo FromProperty(
             MetadataReader reader,
-            PropertyDefinitionHandle propertyHandle)
+            PropertyDefinitionHandle propertyHandle,
+            IEnumerable<string> typeArguments)
         {
             var propertyDef = reader.GetPropertyDefinition(propertyHandle);
             var info = new MemberDefinitionInfo { Kind = MemberKind.Property };
@@ -92,15 +93,14 @@ namespace MemberLens.MetadataTooltips
             var declaringTypeName = GetDeclaringTypeName(reader, declaringTypeHandle);
             var propertyName = reader.GetString(propertyDef.Name);
 
-            var context = TooltipGenericContext.Create(reader, declaringTypeHandle, null);
+            var context = TooltipGenericContext.Create(reader, typeArguments, _sourceUnbound);
             var provider = new TooltipSignatureTypeProvider();
             var sig = propertyDef.DecodeSignature(provider, context);
 
-            info.TypeParameterNames = BuildTypeParameterNames(context);
-
             AddMethodModifiers(info, accessorDef.Attributes);
 
-            AddTypePart(info, sig.ReturnType);
+            AddTypeParts(info, sig.ReturnType);
+            info.SignatureParts.Add(DisplayPart.Space());
 
             AddDeclaringType(info, declaringTypeName, context);
 
@@ -123,24 +123,13 @@ namespace MemberLens.MetadataTooltips
             return declaringTypeName;
         }
 
-        private HashSet<string> BuildTypeParameterNames(TooltipGenericContext context)
-        {
-            var names = new HashSet<string>();
-
-            if (_sourceUnbound) foreach (var tp in context.TypeParameters) names.Add(tp);
-
-            foreach (var mp in context.MethodParameters) names.Add(mp);
-
-            return names;
-        }
-
         private void AddDeclaringType(MemberDefinitionInfo info, string declaringTypeName, TooltipGenericContext context)
         {
             info.SignatureParts.Add(DisplayPart.Type(declaringTypeName));
-            if (context.TypeParameters.Length > 0)
+            if (context.TypeArguments.Count > 0)
             {
                 info.SignatureParts.Add(DisplayPart.Punctuation("<"));
-                for (int i = 0; i < context.TypeParameters.Length; i++)
+                for (int i = 0; i < context.TypeArguments.Count; i++)
                 {
                     if (i > 0)
                     {
@@ -148,7 +137,7 @@ namespace MemberLens.MetadataTooltips
                         info.SignatureParts.Add(DisplayPart.Space());
                     }
 
-                    var param = context.TypeParameters[i];
+                    var param = context.TypeArguments[i];
 
                     if (_sourceUnbound)
                         info.SignatureParts.Add(DisplayPart.TypeParameterName(param));
@@ -181,12 +170,9 @@ namespace MemberLens.MetadataTooltips
                 AddKeyword(info, "override");
         }
 
-        private static void AddTypePart(MemberDefinitionInfo info, string typeName)
+        private static void AddTypeParts(MemberDefinitionInfo info, ImmutableArray<DisplayPart> parts)
         {
-            info.SignatureParts.Add(MetadataTooltipHelper.IsCSharpTypeKeyword(typeName)
-                ? DisplayPart.Keyword(typeName)
-                : DisplayPart.Type(typeName));
-            info.SignatureParts.Add(DisplayPart.Space());
+            info.SignatureParts.AddRange(parts);
         }
 
         private static void AddKeyword(MemberDefinitionInfo info, string keyword)
@@ -197,23 +183,27 @@ namespace MemberLens.MetadataTooltips
 
         private static void AddMethodTypeParameters(MemberDefinitionInfo info, TooltipGenericContext context)
         {
-            if (context.MethodParameters.Length > 0)
+            if (context.MethodTypeParameters.Count > 0)
             {
                 info.SignatureParts.Add(DisplayPart.Punctuation("<"));
-                for (int i = 0; i < context.MethodParameters.Length; i++)
+                for (int i = 0; i < context.MethodTypeParameters.Count; i++)
                 {
                     if (i > 0)
                     {
                         info.SignatureParts.Add(DisplayPart.Punctuation(","));
                         info.SignatureParts.Add(DisplayPart.Space());
                     }
-                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.MethodParameters[i]));
+                    info.SignatureParts.Add(DisplayPart.TypeParameterName(context.MethodTypeParameters[i]));
                 }
                 info.SignatureParts.Add(DisplayPart.Punctuation(">"));
             }
         }
 
-        private static void AddMethodParameters(MemberDefinitionInfo info, MetadataReader reader, MethodDefinition methodDef, MethodSignature<string> sig)
+        private static void AddMethodParameters(
+            MemberDefinitionInfo info,
+            MetadataReader reader,
+            MethodDefinition methodDef,
+            MethodSignature<ImmutableArray<DisplayPart>> sig)
         {
             info.SignatureParts.Add(DisplayPart.Punctuation("("));
 
@@ -236,9 +226,12 @@ namespace MemberLens.MetadataTooltips
                 int paramIndex = param.SequenceNumber - 1;
                 if (paramIndex < sig.ParameterTypes.Length)
                 {
-                    var paramType = sig.ParameterTypes[paramIndex];
+                    var paramParts = sig.ParameterTypes[paramIndex];
 
-                    if (paramType.StartsWith("ref "))
+                    // Check if the provider emitted a by-ref type (starts with "ref" keyword + space)
+                    if (paramParts.Length >= 2
+                        && paramParts[0].Kind == Microsoft.CodeAnalysis.SymbolDisplayPartKind.Keyword
+                        && paramParts[0].Text == "ref")
                     {
                         bool isIn = (param.Attributes & ParameterAttributes.In) != 0;
                         bool isOut = (param.Attributes & ParameterAttributes.Out) != 0;
@@ -253,13 +246,9 @@ namespace MemberLens.MetadataTooltips
                                 "System.Runtime.CompilerServices", "RequiresLocationAttribute");
 
                             if (isRefReadonly)
-                            {
                                 info.SignatureParts.Add(DisplayPart.Keyword("ref readonly"));
-                            }
                             else
-                            {
                                 info.SignatureParts.Add(DisplayPart.Keyword("in"));
-                            }
                         }
                         else
                         {
@@ -267,19 +256,26 @@ namespace MemberLens.MetadataTooltips
                         }
 
                         info.SignatureParts.Add(DisplayPart.Space());
-                        paramType = paramType.Substring(4);
-                    }
 
-                    if (HasAttribute(reader, param.GetCustomAttributes(),
-                        "System.Runtime.CompilerServices", "ParamArrayAttribute")
-                        || HasAttribute(reader, param.GetCustomAttributes(),
-                        "System", "ParamArrayAttribute"))
+                        // Add the element type parts (skip the "ref" keyword and space)
+                        for (int pi = 2; pi < paramParts.Length; pi++)
+                            info.SignatureParts.Add(paramParts[pi]);
+                    }
+                    else
                     {
-                        info.SignatureParts.Add(DisplayPart.Keyword("params"));
-                        info.SignatureParts.Add(DisplayPart.Space());
+                        if (HasAttribute(reader, param.GetCustomAttributes(),
+                            "System.Runtime.CompilerServices", "ParamArrayAttribute")
+                            || HasAttribute(reader, param.GetCustomAttributes(),
+                            "System", "ParamArrayAttribute"))
+                        {
+                            info.SignatureParts.Add(DisplayPart.Keyword("params"));
+                            info.SignatureParts.Add(DisplayPart.Space());
+                        }
+
+                        info.SignatureParts.AddRange(paramParts);
                     }
 
-                    AddTypePart(info, paramType);
+                    info.SignatureParts.Add(DisplayPart.Space());
                 }
 
                 info.SignatureParts.Add(

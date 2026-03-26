@@ -7,6 +7,5 @@ namespace MemberLens.MetadataTooltips
         public MemberKind Kind { get; set; }
         public List<DisplayPart> SignatureParts { get; set; } = new List<DisplayPart>();
         public string SummaryText { get; set; }
-        public HashSet<string> TypeParameterNames { get; set; }
     }
 }
